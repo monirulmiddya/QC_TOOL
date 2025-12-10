@@ -1,0 +1,254 @@
+"""
+Data Routes
+Endpoints for data loading and querying.
+"""
+import os
+import uuid
+import logging
+from flask import Blueprint, request, jsonify, current_app, session
+import pandas as pd
+
+from connectors import PostgresConnector, AthenaConnector, FileConnector
+
+bp = Blueprint('data', __name__)
+logger = logging.getLogger(__name__)
+
+# In-memory storage for loaded data (in production, use Redis or similar)
+DATA_STORE = {}
+
+
+@bp.route('/query', methods=['POST'])
+def execute_query():
+    """Execute SQL query on Athena or PostgreSQL"""
+    try:
+        data = request.get_json()
+        source = data.get('source', '').lower()
+        query = data.get('query', '')
+        
+        if not query:
+            return jsonify({'error': 'Query is required'}), 400
+        
+        if source == 'postgres':
+            connector = PostgresConnector(
+                host=data.get('host') or current_app.config['POSTGRES_HOST'],
+                port=int(data.get('port') or current_app.config['POSTGRES_PORT']),
+                database=data.get('database') or current_app.config['POSTGRES_DB'],
+                user=data.get('user') or current_app.config['POSTGRES_USER'],
+                password=data.get('password') or current_app.config['POSTGRES_PASSWORD']
+            )
+        elif source == 'athena':
+            connector = AthenaConnector(
+                region=data.get('region') or current_app.config['AWS_REGION'],
+                s3_output=data.get('s3_output') or current_app.config['ATHENA_S3_OUTPUT'],
+                database=data.get('database') or current_app.config['ATHENA_DATABASE'],
+                access_key=data.get('access_key') or current_app.config['AWS_ACCESS_KEY_ID'],
+                secret_key=data.get('secret_key') or current_app.config['AWS_SECRET_ACCESS_KEY'],
+                workgroup=data.get('workgroup') or current_app.config['ATHENA_WORKGROUP']
+            )
+        else:
+            return jsonify({'error': f'Invalid source: {source}. Use "postgres" or "athena"'}), 400
+        
+        with connector:
+            df = connector.execute_query(query)
+        
+        # Store data with session ID
+        session_id = str(uuid.uuid4())
+        DATA_STORE[session_id] = {
+            'data': df,
+            'source': source,
+            'query': query,
+            'columns': df.columns.tolist(),
+            'row_count': len(df)
+        }
+        
+        logger.info(f"Query executed successfully. Session: {session_id}, Rows: {len(df)}")
+        
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'columns': df.columns.tolist(),
+            'row_count': len(df),
+            'preview': df.head(100).to_dict('records'),
+            'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()}
+        })
+        
+    except Exception as e:
+        logger.error(f"Query execution failed: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/upload', methods=['POST'])
+def upload_files():
+    """Upload Excel or CSV files"""
+    try:
+        if 'files' not in request.files:
+            return jsonify({'error': 'No files provided'}), 400
+        
+        files = request.files.getlist('files')
+        if not files:
+            return jsonify({'error': 'No files selected'}), 400
+        
+        upload_folder = current_app.config['UPLOAD_FOLDER']
+        os.makedirs(upload_folder, exist_ok=True)
+        
+        uploaded_files = []
+        file_paths = []
+        
+        for file in files:
+            if file.filename == '':
+                continue
+            
+            # Check extension
+            ext = os.path.splitext(file.filename)[1].lower()
+            if ext not in {'.csv', '.xlsx', '.xls'}:
+                return jsonify({'error': f'Unsupported file type: {ext}'}), 400
+            
+            # Generate unique filename
+            unique_name = f"{uuid.uuid4()}_{file.filename}"
+            file_path = os.path.join(upload_folder, unique_name)
+            file.save(file_path)
+            
+            file_paths.append(file_path)
+            uploaded_files.append({
+                'original_name': file.filename,
+                'saved_name': unique_name,
+                'path': file_path
+            })
+        
+        # Load files using connector
+        connector = FileConnector(file_paths=file_paths)
+        df = connector.execute_query()
+        
+        # Store data with session ID
+        session_id = str(uuid.uuid4())
+        DATA_STORE[session_id] = {
+            'data': df,
+            'source': 'file',
+            'files': uploaded_files,
+            'columns': df.columns.tolist(),
+            'row_count': len(df)
+        }
+        
+        logger.info(f"Files uploaded successfully. Session: {session_id}, Files: {len(uploaded_files)}")
+        
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'files': uploaded_files,
+            'columns': df.columns.tolist(),
+            'row_count': len(df),
+            'preview': df.head(100).to_dict('records'),
+            'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()}
+        })
+        
+    except Exception as e:
+        logger.error(f"File upload failed: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/preview/<session_id>', methods=['GET'])
+def get_preview(session_id):
+    """Get preview of loaded data"""
+    try:
+        if session_id not in DATA_STORE:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        stored = DATA_STORE[session_id]
+        df = stored['data']
+        
+        offset = request.args.get('offset', 0, type=int)
+        limit = request.args.get('limit', 100, type=int)
+        
+        subset = df.iloc[offset:offset + limit]
+        
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'columns': df.columns.tolist(),
+            'total_rows': len(df),
+            'offset': offset,
+            'limit': limit,
+            'data': subset.to_dict('records'),
+            'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()}
+        })
+        
+    except Exception as e:
+        logger.error(f"Preview failed: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/sessions', methods=['GET'])
+def list_sessions():
+    """List all active data sessions"""
+    sessions = []
+    for sid, stored in DATA_STORE.items():
+        sessions.append({
+            'session_id': sid,
+            'source': stored['source'],
+            'row_count': stored['row_count'],
+            'columns': stored['columns']
+        })
+    
+    return jsonify({'sessions': sessions})
+
+
+@bp.route('/sessions/<session_id>', methods=['DELETE'])
+def delete_session(session_id):
+    """Delete a data session"""
+    if session_id not in DATA_STORE:
+        return jsonify({'error': 'Session not found'}), 404
+    
+    # Clean up files if it was a file upload
+    stored = DATA_STORE[session_id]
+    if stored['source'] == 'file' and 'files' in stored:
+        for file_info in stored['files']:
+            try:
+                os.remove(file_info['path'])
+            except:
+                pass
+    
+    del DATA_STORE[session_id]
+    return jsonify({'success': True, 'message': 'Session deleted'})
+
+
+@bp.route('/test-connection', methods=['POST'])
+def test_connection():
+    """Test database connection"""
+    try:
+        data = request.get_json()
+        source = data.get('source', '').lower()
+        
+        if source == 'postgres':
+            connector = PostgresConnector(
+                host=data.get('host', ''),
+                port=int(data.get('port', 5432)),
+                database=data.get('database', ''),
+                user=data.get('user', ''),
+                password=data.get('password', '')
+            )
+        elif source == 'athena':
+            connector = AthenaConnector(
+                region=data.get('region', ''),
+                s3_output=data.get('s3_output', ''),
+                database=data.get('database', ''),
+                access_key=data.get('access_key', ''),
+                secret_key=data.get('secret_key', ''),
+                workgroup=data.get('workgroup', 'primary')
+            )
+        else:
+            return jsonify({'error': f'Invalid source: {source}'}), 400
+        
+        result = connector.test_connection()
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Connection test failed: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# Accessor function for other modules
+def get_dataframe(session_id: str) -> pd.DataFrame:
+    """Get DataFrame by session ID"""
+    if session_id not in DATA_STORE:
+        raise ValueError(f"Session not found: {session_id}")
+    return DATA_STORE[session_id]['data']
