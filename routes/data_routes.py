@@ -79,7 +79,7 @@ def execute_query():
 
 @bp.route('/upload', methods=['POST'])
 def upload_files():
-    """Upload Excel or CSV files"""
+    """Upload Excel or CSV files - creates separate session for each file"""
     try:
         if 'files' not in request.files:
             return jsonify({'error': 'No files provided'}), 400
@@ -91,8 +91,7 @@ def upload_files():
         upload_folder = current_app.config['UPLOAD_FOLDER']
         os.makedirs(upload_folder, exist_ok=True)
         
-        uploaded_files = []
-        file_paths = []
+        created_sessions = []
         
         for file in files:
             if file.filename == '':
@@ -101,44 +100,63 @@ def upload_files():
             # Check extension
             ext = os.path.splitext(file.filename)[1].lower()
             if ext not in {'.csv', '.xlsx', '.xls'}:
-                return jsonify({'error': f'Unsupported file type: {ext}'}), 400
+                created_sessions.append({
+                    'filename': file.filename,
+                    'success': False,
+                    'error': f'Unsupported file type: {ext}'
+                })
+                continue
             
-            # Generate unique filename
-            unique_name = f"{uuid.uuid4()}_{file.filename}"
-            file_path = os.path.join(upload_folder, unique_name)
-            file.save(file_path)
-            
-            file_paths.append(file_path)
-            uploaded_files.append({
-                'original_name': file.filename,
-                'saved_name': unique_name,
-                'path': file_path
-            })
+            try:
+                # Generate unique filename
+                unique_name = f"{uuid.uuid4()}_{file.filename}"
+                file_path = os.path.join(upload_folder, unique_name)
+                file.save(file_path)
+                
+                # Load file using connector
+                connector = FileConnector(file_path=file_path)
+                df = connector.execute_query()
+                
+                # Create session for this file
+                session_id = str(uuid.uuid4())
+                DATA_STORE[session_id] = {
+                    'data': df,
+                    'source': 'file',
+                    'source_name': file.filename,
+                    'file_path': file_path,
+                    'columns': df.columns.tolist(),
+                    'row_count': len(df),
+                    'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()}
+                }
+                
+                created_sessions.append({
+                    'session_id': session_id,
+                    'filename': file.filename,
+                    'success': True,
+                    'columns': df.columns.tolist(),
+                    'row_count': len(df),
+                    'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()}
+                })
+                
+                logger.info(f"File uploaded: {file.filename} -> Session: {session_id}, Rows: {len(df)}")
+                
+            except Exception as e:
+                created_sessions.append({
+                    'filename': file.filename,
+                    'success': False,
+                    'error': str(e)
+                })
+                logger.error(f"Failed to load {file.filename}: {e}")
         
-        # Load files using connector
-        connector = FileConnector(file_paths=file_paths)
-        df = connector.execute_query()
-        
-        # Store data with session ID
-        session_id = str(uuid.uuid4())
-        DATA_STORE[session_id] = {
-            'data': df,
-            'source': 'file',
-            'files': uploaded_files,
-            'columns': df.columns.tolist(),
-            'row_count': len(df)
-        }
-        
-        logger.info(f"Files uploaded successfully. Session: {session_id}, Files: {len(uploaded_files)}")
+        successful = [s for s in created_sessions if s.get('success')]
+        failed = [s for s in created_sessions if not s.get('success')]
         
         return jsonify({
-            'success': True,
-            'session_id': session_id,
-            'files': uploaded_files,
-            'columns': df.columns.tolist(),
-            'row_count': len(df),
-            'preview': df.head(100).to_dict('records'),
-            'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()}
+            'success': len(successful) > 0,
+            'sessions': created_sessions,
+            'total_files': len(created_sessions),
+            'successful_count': len(successful),
+            'failed_count': len(failed)
         })
         
     except Exception as e:
@@ -179,17 +197,24 @@ def get_preview(session_id):
 
 @bp.route('/sessions', methods=['GET'])
 def list_sessions():
-    """List all active data sessions"""
+    """List all active data sessions with details"""
     sessions = []
     for sid, stored in DATA_STORE.items():
-        sessions.append({
+        session_info = {
             'session_id': sid,
             'source': stored['source'],
+            'source_name': stored.get('source_name', stored['source']),
             'row_count': stored['row_count'],
-            'columns': stored['columns']
-        })
+            'column_count': len(stored['columns']),
+            'columns': stored['columns'],
+            'dtypes': stored.get('dtypes', {})
+        }
+        # Add query info for database sources
+        if 'query' in stored:
+            session_info['query'] = stored['query'][:100] + '...' if len(stored.get('query', '')) > 100 else stored.get('query', '')
+        sessions.append(session_info)
     
-    return jsonify({'sessions': sessions})
+    return jsonify({'success': True, 'sessions': sessions, 'count': len(sessions)})
 
 
 @bp.route('/sessions/<session_id>', methods=['DELETE'])
@@ -200,12 +225,20 @@ def delete_session(session_id):
     
     # Clean up files if it was a file upload
     stored = DATA_STORE[session_id]
-    if stored['source'] == 'file' and 'files' in stored:
-        for file_info in stored['files']:
+    if stored['source'] == 'file':
+        # Handle new single file format
+        if 'file_path' in stored:
             try:
-                os.remove(file_info['path'])
+                os.remove(stored['file_path'])
             except:
                 pass
+        # Handle old multi-file format (backwards compatibility)
+        elif 'files' in stored:
+            for file_info in stored['files']:
+                try:
+                    os.remove(file_info['path'])
+                except:
+                    pass
     
     del DATA_STORE[session_id]
     return jsonify({'success': True, 'message': 'Session deleted'})

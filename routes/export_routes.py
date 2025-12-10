@@ -156,6 +156,40 @@ def export_excel():
         return jsonify({'error': str(e)}), 500
 
 
+@bp.route('/json', methods=['POST'])
+def export_json():
+    """Export QC results as JSON"""
+    try:
+        data = request.get_json()
+        result_id = data.get('result_id')
+        include_failed_rows = data.get('include_failed_rows', True)
+        
+        if not result_id:
+            return jsonify({'error': 'result_id is required'}), 400
+        
+        qc_results = get_qc_results(result_id)
+        
+        # Build export data
+        export_data = _build_export_data(qc_results, include_failed_rows)
+        
+        # Create JSON file
+        import json
+        json_content = json.dumps(export_data, indent=2, default=str)
+        
+        return send_file(
+            io.BytesIO(json_content.encode('utf-8')),
+            mimetype='application/json',
+            as_attachment=True,
+            download_name=f'qc_results_{result_id[:8]}.json'
+        )
+        
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 404
+    except Exception as e:
+        logger.error(f"JSON export failed: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @bp.route('/data/csv', methods=['POST'])
 def export_data_csv():
     """Export loaded data as CSV"""

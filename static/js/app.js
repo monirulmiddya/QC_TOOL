@@ -50,6 +50,17 @@ const App = {
 
         this.state.currentView = viewName;
 
+        // Sync sessions before updating views
+        if (typeof DataSource !== 'undefined' && DataSource.loadSessions) {
+            DataSource.loadSessions().then(() => {
+                this._triggerViewUpdate(viewName);
+            });
+        } else {
+            this._triggerViewUpdate(viewName);
+        }
+    },
+
+    _triggerViewUpdate(viewName) {
         // Trigger view-specific updates
         if (viewName === 'qc') {
             this.updateQCView();
@@ -61,26 +72,386 @@ const App = {
     },
 
     // Update QC view based on data availability
-    updateQCView() {
+    async updateQCView() {
+        // Fetch sessions from API to ensure we have latest data
+        try {
+            const response = await fetch(`${this.API_BASE}/api/data/sessions`);
+            const data = await response.json();
+            if (data.success && data.sessions) {
+                this.state.sessions = data.sessions;
+            }
+        } catch (e) {
+            console.error('Failed to fetch sessions:', e);
+        }
+
         const hasData = this.state.sessions.length > 0;
-        document.getElementById('noDataMessage').classList.toggle('hidden', hasData);
-        document.getElementById('qcContainer').classList.toggle('hidden', !hasData);
+        const noDataMsg = document.getElementById('noDataMessage');
+        const qcContainer = document.getElementById('qcContainer');
+
+        // Force hide/show with explicit classList operations
+        if (noDataMsg) {
+            if (hasData) {
+                noDataMsg.classList.add('hidden');
+            } else {
+                noDataMsg.classList.remove('hidden');
+            }
+        }
+        if (qcContainer) {
+            if (hasData) {
+                qcContainer.classList.remove('hidden');
+            } else {
+                qcContainer.classList.add('hidden');
+            }
+        }
+
+        // Populate source dropdown
+        if (hasData) {
+            const select = document.getElementById('qcSourceSelect');
+            if (!select) return;
+
+            // Auto-select first session if none selected
+            if (!this.state.activeSession && this.state.sessions.length > 0) {
+                this.state.activeSession = this.state.sessions[0].session_id;
+            }
+
+            select.innerHTML = '<option value="">Select source...</option>' +
+                this.state.sessions.map(s =>
+                    `<option value="${s.session_id}" ${s.session_id === this.state.activeSession ? 'selected' : ''}>
+                        ${s.source_name || s.source} (${s.row_count.toLocaleString()} rows)
+                    </option>`
+                ).join('');
+
+            // Show info for selected source
+            this.updateSelectedSourceInfo();
+
+            // Add change listener if not already added
+            if (!select._hasListener) {
+                select.addEventListener('change', () => {
+                    this.state.activeSession = select.value;
+                    this.updateSelectedSourceInfo();
+                    QCRules.updateColumnsFromSession();
+                });
+                select._hasListener = true;
+            }
+        }
+    },
+
+    // Update selected source info display
+    updateSelectedSourceInfo() {
+        const infoDiv = document.getElementById('selectedSourceInfo');
+        const session = this.state.sessions.find(s => s.session_id === this.state.activeSession);
+
+        if (!session) {
+            infoDiv.innerHTML = '';
+            return;
+        }
+
+        infoDiv.innerHTML = `
+            <span class="info-item"><span class="info-label">Rows:</span> ${session.row_count.toLocaleString()}</span>
+            <span class="info-item"><span class="info-label">Columns:</span> ${session.column_count || session.columns?.length || 0}</span>
+            <span class="info-item"><span class="info-label">Type:</span> ${session.source}</span>
+        `;
     },
 
     // Update Compare view with available sessions
-    updateCompareView() {
-        const sourceSelect = document.getElementById('sourceDataset');
-        const targetSelect = document.getElementById('targetDataset');
+    async updateCompareView() {
+        // Fetch sessions from API to ensure we have latest data
+        try {
+            const response = await fetch(`${this.API_BASE}/api/data/sessions`);
+            const data = await response.json();
+            if (data.success && data.sessions) {
+                this.state.sessions = data.sessions;
+            }
+        } catch (e) {
+            console.error('Failed to fetch sessions:', e);
+        }
 
-        const options = this.state.sessions.map(s =>
-            `<option value="${s.session_id}">${s.source}: ${s.row_count} rows</option>`
-        ).join('');
+        const hasData = this.state.sessions.length > 0;
+        const noDataMsg = document.getElementById('noCompareDataMessage');
+        const container = document.getElementById('compareContainer');
 
-        const defaultOption = '<option value="">Select dataset...</option>';
-        sourceSelect.innerHTML = defaultOption + options;
-        targetSelect.innerHTML = defaultOption + options;
+        // Force hide/show with explicit classList operations
+        if (noDataMsg) {
+            if (hasData) {
+                noDataMsg.classList.add('hidden');
+            } else {
+                noDataMsg.classList.remove('hidden');
+            }
+        }
+        if (container) {
+            if (hasData) {
+                container.classList.remove('hidden');
+            } else {
+                container.classList.add('hidden');
+            }
+        }
 
-        document.getElementById('runCompareBtn').disabled = this.state.sessions.length < 2;
+        if (!hasData) return;
+
+        // Render source checkbox cards
+        const sourcesList = document.getElementById('compareSourcesList');
+        if (sourcesList) {
+            sourcesList.innerHTML = this.state.sessions.map(s => `
+                <label class="source-checkbox-card" data-session-id="${s.session_id}">
+                    <input type="checkbox" class="compare-source-checkbox" value="${s.session_id}">
+                    <div class="source-checkbox-info">
+                        <div class="source-checkbox-name">${s.source_name || s.source}</div>
+                        <div class="source-checkbox-meta">${s.row_count.toLocaleString()} rows · ${s.column_count || s.columns?.length || 0} columns</div>
+                    </div>
+                </label>
+            `).join('');
+
+            // Add checkbox change listeners
+            sourcesList.querySelectorAll('.compare-source-checkbox').forEach(cb => {
+                cb.addEventListener('change', () => {
+                    const card = cb.closest('.source-checkbox-card');
+                    card.classList.toggle('selected', cb.checked);
+                    this.updateCompareColumns();
+                    this.updateCompareButtonState();
+                });
+            });
+        }
+
+        // Initial column population
+        this.updateCompareColumns();
+        this.updateCompareButtonState();
+    },
+
+    // Update column selectors based on selected sources
+    updateCompareColumns() {
+        const checkboxes = document.querySelectorAll('.compare-source-checkbox:checked');
+        const keySelect = document.getElementById('compareKeyColumns');
+        const valueSelect = document.getElementById('compareValueColumns');
+
+        if (!keySelect || !valueSelect) return;
+
+        // Get common columns from all selected sources
+        let commonColumns = null;
+        this.state.allSourceColumns = {};  // Store all columns per source
+
+        checkboxes.forEach(cb => {
+            const session = this.state.sessions.find(s => s.session_id === cb.value);
+            if (session && session.columns) {
+                this.state.allSourceColumns[session.source_name || session.source] = session.columns;
+                if (commonColumns === null) {
+                    commonColumns = new Set(session.columns);
+                } else {
+                    commonColumns = new Set([...commonColumns].filter(c => session.columns.includes(c)));
+                }
+            }
+        });
+
+        const columns = commonColumns ? Array.from(commonColumns) : [];
+
+        const optionsHtml = columns.map(col => `<option value="${col}">${col}</option>`).join('');
+        keySelect.innerHTML = optionsHtml;
+        valueSelect.innerHTML = optionsHtml;
+
+        // Populate aggregation columns
+        const aggColumn = document.getElementById('aggColumn');
+        const aggGroupBy = document.getElementById('aggGroupBy');
+        if (aggColumn) aggColumn.innerHTML = optionsHtml;
+        if (aggGroupBy) aggGroupBy.innerHTML = optionsHtml;
+
+        // Setup column mapping, aggregation toggle, and templates
+        this.setupColumnMapping();
+        this.setupAggregationToggle();
+        this.setupTemplates();
+    },
+
+    // Setup aggregation toggle
+    setupAggregationToggle() {
+        const enableCheckbox = document.getElementById('enableAggregation');
+        const options = document.getElementById('aggregationOptions');
+
+        if (!enableCheckbox || !options) return;
+
+        if (!enableCheckbox._hasListener) {
+            enableCheckbox.addEventListener('change', () => {
+                options.classList.toggle('hidden', !enableCheckbox.checked);
+            });
+            enableCheckbox._hasListener = true;
+        }
+    },
+
+    // Setup QC templates
+    setupTemplates() {
+        const saveBtn = document.getElementById('saveTemplateBtn');
+        const loadSelect = document.getElementById('loadTemplate');
+
+        if (saveBtn && !saveBtn._hasListener) {
+            saveBtn.addEventListener('click', () => this.saveTemplate());
+            saveBtn._hasListener = true;
+        }
+
+        if (loadSelect && !loadSelect._hasListener) {
+            loadSelect.addEventListener('change', () => this.loadTemplate(loadSelect.value));
+            loadSelect._hasListener = true;
+            this.refreshTemplateList();
+        }
+    },
+
+    // Save current config as template
+    saveTemplate() {
+        const name = document.getElementById('templateName')?.value.trim();
+        if (!name) {
+            this.showToast('Enter a template name', 'warning');
+            return;
+        }
+
+        const config = {
+            joinType: document.getElementById('compareJoinType')?.value,
+            tolerance: document.getElementById('compareTolerance')?.value,
+            toleranceType: document.getElementById('compareToleranceType')?.value,
+            dateTolerance: document.getElementById('compareDateTolerance')?.value,
+            ignoreCase: document.getElementById('compareIgnoreCase')?.checked,
+            ignoreWhitespace: document.getElementById('compareIgnoreWhitespace')?.checked,
+            nullEqualsNull: document.getElementById('compareNullEqualsNull')?.checked,
+            enableAggregation: document.getElementById('enableAggregation')?.checked,
+            aggFunction: document.getElementById('aggFunction')?.value,
+            enableFuzzyMatch: document.getElementById('enableFuzzyMatch')?.checked,
+            fuzzyThreshold: document.getElementById('fuzzyThreshold')?.value,
+            transformations: Array.from(document.getElementById('transformations')?.selectedOptions || []).map(o => o.value),
+            showDuplicates: document.getElementById('showDuplicates')?.checked,
+            showUnique: document.getElementById('showUnique')?.checked,
+            showNotMatched: document.getElementById('showNotMatched')?.checked
+        };
+
+        const templates = JSON.parse(localStorage.getItem('qc_templates') || '{}');
+        templates[name] = config;
+        localStorage.setItem('qc_templates', JSON.stringify(templates));
+
+        this.refreshTemplateList();
+        document.getElementById('templateName').value = '';
+        this.showToast(`Template "${name}" saved`, 'success');
+    },
+
+    // Load a template
+    loadTemplate(name) {
+        if (!name) return;
+
+        const templates = JSON.parse(localStorage.getItem('qc_templates') || '{}');
+        const config = templates[name];
+        if (!config) return;
+
+        // Apply config
+        if (config.joinType) document.getElementById('compareJoinType').value = config.joinType;
+        if (config.tolerance) document.getElementById('compareTolerance').value = config.tolerance;
+        if (config.toleranceType) document.getElementById('compareToleranceType').value = config.toleranceType;
+        if (config.dateTolerance) document.getElementById('compareDateTolerance').value = config.dateTolerance;
+        document.getElementById('compareIgnoreCase').checked = config.ignoreCase || false;
+        document.getElementById('compareIgnoreWhitespace').checked = config.ignoreWhitespace || false;
+        document.getElementById('compareNullEqualsNull').checked = config.nullEqualsNull !== false;
+        document.getElementById('enableAggregation').checked = config.enableAggregation || false;
+        if (config.aggFunction) document.getElementById('aggFunction').value = config.aggFunction;
+        document.getElementById('enableFuzzyMatch').checked = config.enableFuzzyMatch || false;
+        if (config.fuzzyThreshold) document.getElementById('fuzzyThreshold').value = config.fuzzyThreshold;
+        document.getElementById('showDuplicates').checked = config.showDuplicates !== false;
+        document.getElementById('showUnique').checked = config.showUnique !== false;
+        document.getElementById('showNotMatched').checked = config.showNotMatched !== false;
+
+        // Handle transformation multi-select
+        if (config.transformations) {
+            const select = document.getElementById('transformations');
+            Array.from(select.options).forEach(opt => {
+                opt.selected = config.transformations.includes(opt.value);
+            });
+        }
+
+        // Toggle aggregation options visibility
+        const aggOptions = document.getElementById('aggregationOptions');
+        if (aggOptions) aggOptions.classList.toggle('hidden', !config.enableAggregation);
+
+        this.showToast(`Template "${name}" loaded`, 'success');
+    },
+
+    // Refresh template dropdown
+    refreshTemplateList() {
+        const select = document.getElementById('loadTemplate');
+        if (!select) return;
+
+        const templates = JSON.parse(localStorage.getItem('qc_templates') || '{}');
+        const names = Object.keys(templates);
+
+        select.innerHTML = '<option value="">Select saved template...</option>' +
+            names.map(n => `<option value="${n}">${n}</option>`).join('');
+    },
+
+    // Setup column mapping UI
+    setupColumnMapping() {
+        const addBtn = document.getElementById('addColumnMapping');
+        if (!addBtn) return;
+
+        if (!addBtn._hasListener) {
+            addBtn.addEventListener('click', () => this.addColumnMappingRow());
+            addBtn._hasListener = true;
+        }
+    },
+
+    // Add a column mapping row
+    addColumnMappingRow() {
+        const container = document.getElementById('columnMappingList');
+        if (!container) return;
+
+        const sources = Object.keys(this.state.allSourceColumns || {});
+        if (sources.length < 2) {
+            this.showToast('Select at least 2 sources first', 'warning');
+            return;
+        }
+
+        const rowId = `mapping_${Date.now()}`;
+        const row = document.createElement('div');
+        row.className = 'column-mapping-row';
+        row.id = rowId;
+
+        // Create select for each source
+        const selects = sources.map((source, idx) => {
+            const cols = this.state.allSourceColumns[source] || [];
+            const options = cols.map(c => `<option value="${c}">${c}</option>`).join('');
+            return `
+                <select class="form-select mapping-source-${idx}" data-source="${source}">
+                    <option value="">${source}</option>
+                    ${options}
+                </select>
+            `;
+        }).join('<span class="column-mapping-arrow">↔</span>');
+
+        row.innerHTML = `
+            ${selects}
+            <button type="button" class="column-mapping-remove" onclick="document.getElementById('${rowId}').remove()">✕</button>
+        `;
+
+        container.appendChild(row);
+    },
+
+    // Get all column mappings
+    getColumnMappings() {
+        const container = document.getElementById('columnMappingList');
+        if (!container) return [];
+
+        const mappings = [];
+        container.querySelectorAll('.column-mapping-row').forEach(row => {
+            const selects = row.querySelectorAll('select');
+            const mapping = {};
+            selects.forEach(sel => {
+                if (sel.value) {
+                    mapping[sel.dataset.source] = sel.value;
+                }
+            });
+            if (Object.keys(mapping).length >= 2) {
+                mappings.push(mapping);
+            }
+        });
+        return mappings;
+    },
+
+    // Update compare button state
+    updateCompareButtonState() {
+        const checkboxes = document.querySelectorAll('.compare-source-checkbox:checked');
+        const runBtn = document.getElementById('runCompareBtn');
+        if (runBtn) {
+            runBtn.disabled = checkboxes.length < 2;
+        }
     },
 
     // Update Results view

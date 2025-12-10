@@ -34,18 +34,32 @@ const QCRules = {
     },
 
     showRuleConfig(rule) {
+        // Check if a source is selected
+        if (!App.state.activeSession) {
+            App.showToast('Please select a data source first', 'warning');
+            return;
+        }
+
         this.currentRuleConfig = { rule_id: rule.id, config: {} };
 
         document.getElementById('ruleConfigTitle').textContent = `Configure: ${rule.name}`;
 
         const body = document.getElementById('ruleConfigBody');
         const schema = rule.config_schema.properties || {};
-        const columns = App.state.sessions.length > 0
-            ? App.state.sessions[App.state.sessions.length - 1].columns
-            : [];
+
+        // Get columns from the selected session
+        const session = App.state.sessions.find(s => s.session_id === App.state.activeSession);
+        const columns = session?.columns || [];
 
         body.innerHTML = this.generateFormFields(schema, columns);
         App.showModal('ruleConfigModal');
+    },
+
+    // Method called when session changes to update column lists
+    updateColumnsFromSession() {
+        // This is called when the source dropdown changes
+        // Could be used to refresh any open rule configuration
+        console.log('Session changed to:', App.state.activeSession);
     },
 
     generateFormFields(schema, columns) {
@@ -212,8 +226,13 @@ const QCRules = {
     },
 
     async runQCChecks() {
-        if (this.activeRules.length === 0 || !App.state.activeSession) {
-            App.showToast('Please add at least one rule and load data', 'warning');
+        if (this.activeRules.length === 0) {
+            App.showToast('Please add at least one rule', 'warning');
+            return;
+        }
+
+        if (!App.state.activeSession) {
+            App.showToast('Please select a data source', 'warning');
             return;
         }
 
@@ -254,49 +273,98 @@ const QCRules = {
     },
 
     setupCompare() {
-        document.getElementById('runCompareBtn').addEventListener('click', () => {
-            this.runComparison();
-        });
-
-        // Enable/disable button based on selection
-        ['sourceDataset', 'targetDataset'].forEach(id => {
-            document.getElementById(id).addEventListener('change', () => {
-                const source = document.getElementById('sourceDataset').value;
-                const target = document.getElementById('targetDataset').value;
-                document.getElementById('runCompareBtn').disabled = !source || !target || source === target;
+        const runBtn = document.getElementById('runCompareBtn');
+        if (runBtn) {
+            runBtn.addEventListener('click', () => {
+                this.runComparison();
             });
-        });
+        }
     },
 
     async runComparison() {
-        const sourceId = document.getElementById('sourceDataset').value;
-        const targetId = document.getElementById('targetDataset').value;
-        const keyColumns = document.getElementById('keyColumns').value
-            .split(',')
-            .map(s => s.trim())
-            .filter(s => s);
-        const tolerance = parseFloat(document.getElementById('tolerance').value) || 0;
-        const ignoreCase = document.getElementById('ignoreCase').checked;
-        const ignoreWhitespace = document.getElementById('ignoreWhitespace').checked;
+        // Get selected sources
+        const selectedCheckboxes = document.querySelectorAll('.compare-source-checkbox:checked');
+        const sessionIds = Array.from(selectedCheckboxes).map(cb => cb.value);
 
-        if (!sourceId || !targetId) {
-            App.showToast('Please select both datasets', 'warning');
+        if (sessionIds.length < 2) {
+            App.showToast('Please select at least 2 sources to compare', 'warning');
             return;
         }
 
-        App.showLoading('Comparing datasets...');
+        // Get column selections
+        const keyColumnsSelect = document.getElementById('compareKeyColumns');
+        const valueColumnsSelect = document.getElementById('compareValueColumns');
+
+        const keyColumns = Array.from(keyColumnsSelect.selectedOptions).map(o => o.value);
+        const valueColumns = Array.from(valueColumnsSelect.selectedOptions).map(o => o.value);
+
+        // Get JOIN type
+        const joinType = document.getElementById('compareJoinType')?.value || 'full';
+
+        // Get tolerance options
+        const tolerance = parseFloat(document.getElementById('compareTolerance')?.value) || 0;
+        const toleranceType = document.getElementById('compareToleranceType')?.value || 'absolute';
+        const dateTolerance = parseFloat(document.getElementById('compareDateTolerance')?.value) || 0;
+        const dateToleranceUnit = document.getElementById('compareDateToleranceUnit')?.value || 'days';
+
+        // Get string/null handling
+        const ignoreCase = document.getElementById('compareIgnoreCase')?.checked || false;
+        const ignoreWhitespace = document.getElementById('compareIgnoreWhitespace')?.checked || false;
+        const nullEqualsNull = document.getElementById('compareNullEqualsNull')?.checked ?? true;
+
+        // Get analysis options
+        const showDuplicates = document.getElementById('showDuplicates')?.checked ?? true;
+        const showUnique = document.getElementById('showUnique')?.checked ?? true;
+        const showNotMatched = document.getElementById('showNotMatched')?.checked ?? true;
+
+        // Get column mappings
+        const columnMappings = App.getColumnMappings ? App.getColumnMappings() : [];
+
+        // Get fuzzy matching options
+        const enableFuzzyMatch = document.getElementById('enableFuzzyMatch')?.checked || false;
+        const fuzzyThreshold = parseFloat(document.getElementById('fuzzyThreshold')?.value) || 80;
+
+        // Get transformations
+        const transformSelect = document.getElementById('transformations');
+        const transformations = transformSelect ? Array.from(transformSelect.selectedOptions).map(o => o.value) : [];
+
+        if (keyColumns.length === 0) {
+            App.showToast('Please select at least one key column for matching', 'warning');
+            return;
+        }
+
+        App.showLoading('Comparing sources...');
 
         try {
             const response = await fetch(`${App.API_BASE}/api/qc/compare`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    source_session_id: sourceId,
-                    target_session_id: targetId,
+                    session_ids: sessionIds,
                     key_columns: keyColumns,
-                    tolerance: tolerance,
-                    ignore_case: ignoreCase,
-                    ignore_whitespace: ignoreWhitespace
+                    value_columns: valueColumns.length > 0 ? valueColumns : null,
+                    join_type: joinType,
+                    column_mappings: columnMappings.length > 0 ? columnMappings : null,
+                    tolerance: {
+                        numeric: tolerance,
+                        numeric_type: toleranceType,
+                        date: dateTolerance,
+                        date_unit: dateToleranceUnit
+                    },
+                    options: {
+                        ignore_case: ignoreCase,
+                        ignore_whitespace: ignoreWhitespace,
+                        null_equals_null: nullEqualsNull,
+                        fuzzy_match: enableFuzzyMatch,
+                        fuzzy_threshold: fuzzyThreshold,
+                        transformations: transformations
+                    },
+                    analysis: {
+                        duplicates: showDuplicates,
+                        unique: showUnique,
+                        not_matched: showNotMatched
+                    },
+                    aggregation: this.getAggregationConfig()
                 })
             });
 
@@ -306,27 +374,102 @@ const QCRules = {
                 throw new Error(data.error || 'Comparison failed');
             }
 
-            // Format as result-like structure
-            const comparisonResult = [{
-                rule_name: 'Dataset Comparison',
-                passed: data.match,
-                message: data.message,
-                details: data.column_differences,
-                statistics: data.summary
-            }];
+            // Format results for display
+            const results = [];
 
-            App.setResults(comparisonResult, data.result_id);
-
-            if (data.match) {
-                App.showToast('Datasets match!', 'success');
-            } else {
-                App.showToast('Differences found between datasets', 'warning');
+            if (data.duplicates && showDuplicates) {
+                results.push({
+                    rule_name: '🔄 Duplicates (In Multiple Sources)',
+                    passed: data.duplicates.count === 0,
+                    message: `Found ${data.duplicates.count} duplicate rows across sources`,
+                    statistics: { duplicate_count: data.duplicates.count },
+                    failed_rows: data.duplicates.rows?.slice(0, 100),
+                    failed_row_count: data.duplicates.count
+                });
             }
+
+            if (data.unique && showUnique) {
+                for (const [source, info] of Object.entries(data.unique)) {
+                    results.push({
+                        rule_name: `🔹 Unique to: ${source}`,
+                        passed: true,
+                        message: `${info.count} rows only in this source`,
+                        statistics: { unique_count: info.count },
+                        failed_rows: info.rows?.slice(0, 100),
+                        failed_row_count: info.count
+                    });
+                }
+            }
+
+            if (data.not_matched && showNotMatched) {
+                results.push({
+                    rule_name: '❌ Value Differences',
+                    passed: data.not_matched.count === 0,
+                    message: `Found ${data.not_matched.count} rows with value differences`,
+                    statistics: { difference_count: data.not_matched.count },
+                    details: data.not_matched.column_differences,
+                    failed_rows: data.not_matched.rows?.slice(0, 100),
+                    failed_row_count: data.not_matched.count
+                });
+            }
+
+            // Add aggregation results
+            if (data.aggregation) {
+                const agg = data.aggregation;
+                const hasVariance = agg.variances && agg.variances.length > 0;
+                results.push({
+                    rule_name: `📊 Aggregation: ${agg.function.toUpperCase()}(${agg.column})`,
+                    passed: !hasVariance,
+                    message: hasVariance
+                        ? `${agg.variances.length} groups exceed variance threshold`
+                        : `All ${agg.total_groups} groups within tolerance`,
+                    statistics: {
+                        total_groups: agg.total_groups,
+                        variance_count: agg.variances?.length || 0
+                    },
+                    details: agg.results,
+                    failed_rows: agg.variances
+                });
+            }
+
+            if (results.length === 0) {
+                results.push({
+                    rule_name: 'Comparison Results',
+                    passed: true,
+                    message: 'No analysis options selected',
+                    statistics: {}
+                });
+            }
+
+            App.setResults(results, data.result_id);
+            App.showToast('Comparison complete', 'success');
 
         } catch (error) {
             App.showToast(`Comparison failed: ${error.message}`, 'error');
         } finally {
             App.hideLoading();
         }
+    },
+
+    // Get aggregation configuration
+    getAggregationConfig() {
+        const enabled = document.getElementById('enableAggregation')?.checked;
+        if (!enabled) return null;
+
+        const func = document.getElementById('aggFunction')?.value || 'sum';
+        const column = document.getElementById('aggColumn')?.value;
+        const groupBySelect = document.getElementById('aggGroupBy');
+        const groupBy = groupBySelect ? Array.from(groupBySelect.selectedOptions).map(o => o.value) : [];
+        const varianceThreshold = parseFloat(document.getElementById('aggVarianceThreshold')?.value) || 1;
+
+        if (!column) return null;
+
+        return {
+            enabled: true,
+            function: func,
+            column: column,
+            group_by: groupBy.length > 0 ? groupBy : null,
+            variance_threshold: varianceThreshold
+        };
     }
 };

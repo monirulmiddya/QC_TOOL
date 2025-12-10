@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,6 +9,7 @@
     <link rel="stylesheet" href="/static/css/main.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
+
 <body>
     <!-- Header -->
     <header class="header">
@@ -46,7 +48,7 @@
                 <h2>Load Data</h2>
                 <p>Select a data source and load your data for quality checks</p>
             </div>
-            
+
             <!-- Source Selector -->
             <div class="source-selector">
                 <button class="source-btn active" data-source="file">
@@ -66,12 +68,14 @@
                 </button>
                 <button class="source-btn" data-source="athena">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"></path>
+                        <path
+                            d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z">
+                        </path>
                     </svg>
                     AWS Athena
                 </button>
             </div>
-            
+
             <!-- File Upload Panel -->
             <div id="filePanel" class="source-panel active">
                 <div class="upload-zone" id="uploadZone">
@@ -87,7 +91,7 @@
                 <div id="fileList" class="file-list"></div>
                 <button id="loadFilesBtn" class="btn btn-primary" disabled>Load Files</button>
             </div>
-            
+
             <!-- PostgreSQL Panel -->
             <div id="postgresPanel" class="source-panel">
                 <div class="connection-form">
@@ -121,11 +125,12 @@
                 </div>
                 <div class="sql-editor-container">
                     <label>SQL Query</label>
-                    <textarea id="pgQuery" class="sql-editor" placeholder="SELECT * FROM your_table LIMIT 1000"></textarea>
+                    <textarea id="pgQuery" class="sql-editor"
+                        placeholder="SELECT * FROM your_table LIMIT 1000"></textarea>
                 </div>
                 <button id="runPgQueryBtn" class="btn btn-primary">Run Query</button>
             </div>
-            
+
             <!-- Athena Panel -->
             <div id="athenaPanel" class="source-panel">
                 <div class="connection-form">
@@ -163,26 +168,26 @@
                 </div>
                 <div class="sql-editor-container">
                     <label>SQL Query</label>
-                    <textarea id="athenaQuery" class="sql-editor" placeholder="SELECT * FROM your_table LIMIT 1000"></textarea>
+                    <textarea id="athenaQuery" class="sql-editor"
+                        placeholder="SELECT * FROM your_table LIMIT 1000"></textarea>
                 </div>
                 <button id="runAthenaQueryBtn" class="btn btn-primary">Run Query</button>
             </div>
-            
-            <!-- Data Preview -->
-            <div id="dataPreview" class="data-preview hidden">
-                <div class="preview-header">
-                    <h3>Data Preview</h3>
-                    <div class="preview-info">
-                        <span id="previewRowCount">0 rows</span>
-                        <span id="previewColCount">0 columns</span>
-                    </div>
+
+            <!-- Loaded Sources Panel -->
+            <div id="loadedSourcesPanel" class="loaded-sources-panel hidden">
+                <div class="panel-header">
+                    <h3>Loaded Sources <span id="sourceCount">(0)</span></h3>
+                    <button id="refreshSourcesBtn" class="btn btn-outline btn-sm">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16"
+                            height="16">
+                            <polyline points="23 4 23 10 17 10"></polyline>
+                            <polyline points="1 20 1 14 7 14"></polyline>
+                            <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"></path>
+                        </svg>
+                    </button>
                 </div>
-                <div class="table-container">
-                    <table id="previewTable" class="data-table">
-                        <thead id="previewTableHead"></thead>
-                        <tbody id="previewTableBody"></tbody>
-                    </table>
-                </div>
+                <div id="sourcesList" class="sources-list"></div>
             </div>
         </section>
 
@@ -192,7 +197,7 @@
                 <h2>Quality Checks</h2>
                 <p>Configure and run QC rules on your loaded data</p>
             </div>
-            
+
             <div id="noDataMessage" class="message-box">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"></circle>
@@ -202,14 +207,25 @@
                 <p>Please load data first before running QC checks</p>
                 <button class="btn btn-primary" data-view="data">Go to Data Source</button>
             </div>
-            
+
             <div id="qcContainer" class="qc-container hidden">
+                <!-- Source Selector -->
+                <div class="qc-source-selector-wrapper">
+                    <div class="form-group">
+                        <label for="qcSourceSelect">Select Data Source</label>
+                        <select id="qcSourceSelect" class="form-select">
+                            <option value="">Select source...</option>
+                        </select>
+                    </div>
+                    <div id="selectedSourceInfo" class="selected-source-info"></div>
+                </div>
+
                 <!-- Available Rules -->
                 <div class="rules-panel">
                     <h3>Available Rules</h3>
                     <div id="rulesList" class="rules-list"></div>
                 </div>
-                
+
                 <!-- Active Rules -->
                 <div class="active-rules-panel">
                     <h3>Active Rules <span id="activeRuleCount">(0)</span></h3>
@@ -228,61 +244,295 @@
         <section id="compareView" class="view">
             <div class="view-header">
                 <h2>Compare Datasets</h2>
-                <p>Compare two datasets to find differences</p>
+                <p>Select multiple data sources to find duplicates, unique records, and differences</p>
             </div>
-            
-            <div class="compare-container">
-                <div class="compare-panel">
-                    <h3>Source Dataset</h3>
-                    <select id="sourceDataset" class="form-select">
-                        <option value="">Select dataset...</option>
-                    </select>
-                </div>
-                
-                <div class="compare-icon">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="5" y1="12" x2="19" y2="12"></line>
-                        <polyline points="12 5 19 12 12 19"></polyline>
-                    </svg>
-                </div>
-                
-                <div class="compare-panel">
-                    <h3>Target Dataset</h3>
-                    <select id="targetDataset" class="form-select">
-                        <option value="">Select dataset...</option>
-                    </select>
-                </div>
-            </div>
-            
-            <div class="compare-options">
-                <h3>Comparison Options</h3>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="keyColumns">Key Columns (comma-separated)</label>
-                        <input type="text" id="keyColumns" placeholder="e.g., id, customer_id">
-                    </div>
-                    <div class="form-group">
-                        <label for="tolerance">Numeric Tolerance</label>
-                        <input type="number" id="tolerance" value="0" step="0.01" min="0">
-                    </div>
-                </div>
-                <div class="form-row">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="ignoreCase"> Ignore Case
-                    </label>
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="ignoreWhitespace"> Ignore Whitespace
-                    </label>
-                </div>
-            </div>
-            
-            <button id="runCompareBtn" class="btn btn-primary btn-lg" disabled>
+
+            <div id="noCompareDataMessage" class="message-box">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
                 </svg>
-                Compare Datasets
-            </button>
+                <p>Load at least 2 data sources to compare</p>
+                <button class="btn btn-primary" data-view="data">Go to Data Source</button>
+            </div>
+
+            <div id="compareContainer" class="compare-enhanced hidden">
+                <!-- Source Selection -->
+                <div class="compare-section">
+                    <h3>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20"
+                            height="20">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                        </svg>
+                        Select Sources to Compare
+                    </h3>
+                    <p class="section-hint">Select 2 or more sources to compare</p>
+                    <div id="compareSourcesList" class="compare-sources-grid"></div>
+                </div>
+
+                <!-- Column Selection -->
+                <div class="compare-section">
+                    <h3>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20"
+                            height="20">
+                            <line x1="8" y1="6" x2="21" y2="6"></line>
+                            <line x1="8" y1="12" x2="21" y2="12"></line>
+                            <line x1="8" y1="18" x2="21" y2="18"></line>
+                            <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                            <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                            <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                        </svg>
+                        Column Configuration
+                    </h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="compareKeyColumns">Key Columns (for matching rows)</label>
+                            <select id="compareKeyColumns" class="form-select multi-select" multiple>
+                            </select>
+                            <small class="form-hint">Hold Ctrl/Cmd to select multiple. These columns identify unique
+                                rows.</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="compareValueColumns">Columns to Compare (optional)</label>
+                            <select id="compareValueColumns" class="form-select multi-select" multiple>
+                            </select>
+                            <small class="form-hint">Leave empty to compare all columns.</small>
+                        </div>
+                    </div>
+
+                    <!-- JOIN Type -->
+                    <div class="form-row" style="margin-top: 1rem;">
+                        <div class="form-group">
+                            <label for="compareJoinType">Join Type</label>
+                            <select id="compareJoinType" class="form-select">
+                                <option value="full">FULL OUTER (all rows from all sources)</option>
+                                <option value="inner">INNER (only matching rows)</option>
+                                <option value="left">LEFT (all from first source)</option>
+                                <option value="right">RIGHT (all from second source)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Column Mapping (Optional) -->
+                <div class="compare-section">
+                    <h3>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20"
+                            height="20">
+                            <path d="M16 3h5v5"></path>
+                            <line x1="21" y1="3" x2="14" y2="10"></line>
+                            <path d="M8 21H3v-5"></path>
+                            <line x1="3" y1="21" x2="10" y2="14"></line>
+                        </svg>
+                        Column Mapping <span class="badge-optional">Optional</span>
+                    </h3>
+                    <p class="section-hint">Map columns if they have different names across sources</p>
+                    <div id="columnMappingList" class="column-mapping-list"></div>
+                    <button type="button" id="addColumnMapping" class="btn btn-sm btn-secondary">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16"
+                            height="16">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        Add Column Mapping
+                    </button>
+                </div>
+
+                <!-- Analysis Options -->
+                <div class="compare-section">
+                    <h3>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20"
+                            height="20">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                        </svg>
+                        Analysis Options
+                    </h3>
+                    <div class="analysis-options">
+                        <label class="analysis-option">
+                            <input type="checkbox" id="showDuplicates" checked>
+                            <span class="option-icon duplicate">🔄</span>
+                            <span class="option-text">
+                                <strong>Duplicates</strong>
+                                <small>Rows appearing in multiple sources</small>
+                            </span>
+                        </label>
+                        <label class="analysis-option">
+                            <input type="checkbox" id="showUnique" checked>
+                            <span class="option-icon unique">🔹</span>
+                            <span class="option-text">
+                                <strong>Unique</strong>
+                                <small>Rows only in one source</small>
+                            </span>
+                        </label>
+                        <label class="analysis-option">
+                            <input type="checkbox" id="showNotMatched" checked>
+                            <span class="option-icon notmatched">❌</span>
+                            <span class="option-text">
+                                <strong>Value Differences</strong>
+                                <small>Matched keys with different values</small>
+                            </span>
+                        </label>
+                    </div>
+
+                    <!-- Tolerance Settings -->
+                    <h4 class="subsection-title">Tolerance Settings</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="compareTolerance">Numeric Tolerance</label>
+                            <div class="input-with-addon">
+                                <input type="number" id="compareTolerance" value="0" step="0.01" min="0"
+                                    placeholder="0">
+                                <select id="compareToleranceType" class="form-select-sm">
+                                    <option value="absolute">Absolute</option>
+                                    <option value="percent">Percent %</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="compareDateTolerance">Date Tolerance</label>
+                            <div class="input-with-addon">
+                                <input type="number" id="compareDateTolerance" value="0" step="1" min="0"
+                                    placeholder="0">
+                                <select id="compareDateToleranceUnit" class="form-select-sm">
+                                    <option value="days">Days</option>
+                                    <option value="hours">Hours</option>
+                                    <option value="minutes">Minutes</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Comparison Options -->
+                    <h4 class="subsection-title">String & Null Handling</h4>
+                    <div class="form-row checkbox-row">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="compareIgnoreCase"> Ignore Case
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="compareIgnoreWhitespace"> Ignore Whitespace
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="compareNullEqualsNull" checked> Null = Null is Match
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Aggregation QC Section -->
+                <div class="compare-section">
+                    <h3>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20"
+                            height="20">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="3" y1="9" x2="21" y2="9"></line>
+                            <line x1="9" y1="21" x2="9" y2="9"></line>
+                        </svg>
+                        Aggregation QC <span class="badge-optional">Optional</span>
+                    </h3>
+                    <p class="section-hint">Compare totals like SUM, COUNT, AVG between sources</p>
+
+                    <label class="checkbox-label" style="margin-bottom: 1rem;">
+                        <input type="checkbox" id="enableAggregation"> Enable Aggregation Comparison
+                    </label>
+
+                    <div id="aggregationOptions" class="aggregation-options hidden">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="aggFunction">Aggregate Function</label>
+                                <select id="aggFunction" class="form-select">
+                                    <option value="sum">SUM</option>
+                                    <option value="count">COUNT</option>
+                                    <option value="avg">AVG (Average)</option>
+                                    <option value="min">MIN</option>
+                                    <option value="max">MAX</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="aggColumn">Aggregate Column</label>
+                                <select id="aggColumn" class="form-select">
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Advanced Options Section -->
+                <div class="compare-section">
+                    <h3>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20"
+                            height="20">
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <path
+                                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
+                            </path>
+                        </svg>
+                        Advanced Options <span class="badge-optional">Optional</span>
+                    </h3>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Fuzzy String Matching</label>
+                            <div class="input-with-addon">
+                                <label class="checkbox-label" style="margin: 0;">
+                                    <input type="checkbox" id="enableFuzzyMatch"> Enable Fuzzy Match
+                                </label>
+                                <input type="number" id="fuzzyThreshold" value="80" min="0" max="100" step="5"
+                                    placeholder="80" style="width: 80px;" title="Similarity % (0-100)">
+                            </div>
+                            <small class="form-hint">Match strings with similar spelling (threshold: 80 = 80%
+                                similar)</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="transformations">Apply Transformations</label>
+                            <select id="transformations" class="form-select multi-select" multiple>
+                                <option value="trim">Trim whitespace</option>
+                                <option value="lower">Lowercase</option>
+                                <option value="upper">Uppercase</option>
+                                <option value="remove_special">Remove special chars</option>
+                                <option value="normalize_spaces">Normalize spaces</option>
+                            </select>
+                            <small class="form-hint">Transform values before comparing</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Template Section -->
+                <div class="compare-section template-section">
+                    <h3>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20"
+                            height="20">
+                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                            <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                            <polyline points="7 3 7 8 15 8"></polyline>
+                        </svg>
+                        QC Templates <span class="badge-optional">Optional</span>
+                    </h3>
+                    <div class="template-actions">
+                        <div class="form-group">
+                            <label for="loadTemplate">Load Template</label>
+                            <select id="loadTemplate" class="form-select">
+                                <option value="">Select saved template...</option>
+                            </select>
+                        </div>
+                        <div class="form-group template-save">
+                            <label for="templateName">Save Current Config</label>
+                            <div class="input-with-addon">
+                                <input type="text" id="templateName" placeholder="Template name...">
+                                <button type="button" id="saveTemplateBtn" class="btn btn-secondary">Save</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <button id="runCompareBtn" class="btn btn-primary btn-lg" disabled>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    Compare Selected Sources
+                </button>
+            </div>
         </section>
 
         <!-- Results View -->
@@ -291,7 +541,7 @@
                 <h2>Results</h2>
                 <p>View QC check and comparison results</p>
             </div>
-            
+
             <div id="noResultsMessage" class="message-box">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -300,11 +550,11 @@
                 </svg>
                 <p>No results yet. Run QC checks or compare datasets.</p>
             </div>
-            
+
             <div id="resultsContainer" class="results-container hidden">
                 <!-- Results Summary -->
                 <div id="resultsSummary" class="results-summary"></div>
-                
+
                 <!-- Detailed Results -->
                 <div id="resultsDetail" class="results-detail"></div>
             </div>
@@ -365,10 +615,68 @@
         </div>
     </div>
 
+    <!-- Data Viewer Modal -->
+    <div id="dataViewerModal" class="modal hidden">
+        <div class="modal-content modal-fullscreen">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <h3 id="dataViewerTitle">Data Viewer</h3>
+                    <span id="dataViewerInfo" class="modal-subtitle"></span>
+                </div>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-toolbar">
+                <div class="toolbar-left">
+                    <input type="text" id="dataSearchInput" class="form-input" placeholder="Search...">
+                </div>
+                <div class="toolbar-right">
+                    <label>Rows per page:</label>
+                    <select id="pageSizeSelect" class="form-select-sm">
+                        <option value="25">25</option>
+                        <option value="50" selected>50</option>
+                        <option value="100">100</option>
+                        <option value="250">250</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-body modal-body-table">
+                <div class="table-container-full">
+                    <table id="dataViewerTable" class="data-table">
+                        <thead id="dataViewerHead"></thead>
+                        <tbody id="dataViewerBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer modal-footer-pagination">
+                <div class="pagination-info">
+                    <span id="paginationInfo">Showing 0-0 of 0</span>
+                </div>
+                <div class="pagination-controls">
+                    <button id="prevPageBtn" class="btn btn-outline btn-sm" disabled>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16"
+                            height="16">
+                            <polyline points="15 18 9 12 15 6"></polyline>
+                        </svg>
+                        Previous
+                    </button>
+                    <span id="pageIndicator" class="page-indicator">Page 1 of 1</span>
+                    <button id="nextPageBtn" class="btn btn-outline btn-sm">
+                        Next
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16"
+                            height="16">
+                            <polyline points="9 18 15 12 9 6"></polyline>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="/static/js/app.js"></script>
     <script src="/static/js/dataSource.js"></script>
     <script src="/static/js/qcRules.js"></script>
     <script src="/static/js/results.js"></script>
 </body>
+
 </html>
