@@ -17,6 +17,27 @@ logger = logging.getLogger(__name__)
 DATA_STORE = {}
 
 
+def df_to_records(df):
+    """Convert DataFrame to records while preserving original date formats.
+    
+    Pandas to_dict('records') converts datetime to verbose format like 
+    'Mon, 01 Jan 2024 00:00:00 GMT'. This function keeps dates as ISO strings
+    like '2024-01-01' or '2024-01-01 12:30:00'.
+    """
+    # Create a copy to avoid modifying the original
+    df_copy = df.copy()
+    
+    # Convert datetime columns to string format
+    for col in df_copy.columns:
+        if pd.api.types.is_datetime64_any_dtype(df_copy[col]):
+            # Convert to ISO format string, keeping original precision
+            df_copy[col] = df_copy[col].apply(
+                lambda x: x.isoformat() if pd.notna(x) else None
+            )
+    
+    return df_copy.to_dict('records')
+
+
 @bp.route('/query', methods=['POST'])
 def execute_query():
     """Execute SQL query on Athena or PostgreSQL"""
@@ -56,9 +77,11 @@ def execute_query():
         DATA_STORE[session_id] = {
             'data': df,
             'source': source,
+            'source_name': f"{source.upper()} Query",
             'query': query,
             'columns': df.columns.tolist(),
-            'row_count': len(df)
+            'row_count': len(df),
+            'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()}
         }
         
         logger.info(f"Query executed successfully. Session: {session_id}, Rows: {len(df)}")
@@ -68,7 +91,7 @@ def execute_query():
             'session_id': session_id,
             'columns': df.columns.tolist(),
             'row_count': len(df),
-            'preview': df.head(100).to_dict('records'),
+            'preview': df_to_records(df.head(100)),
             'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()}
         })
         
@@ -186,7 +209,7 @@ def get_preview(session_id):
             'total_rows': len(df),
             'offset': offset,
             'limit': limit,
-            'data': subset.to_dict('records'),
+            'data': df_to_records(subset),
             'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()}
         })
         
@@ -242,6 +265,23 @@ def delete_session(session_id):
     
     del DATA_STORE[session_id]
     return jsonify({'success': True, 'message': 'Session deleted'})
+
+
+@bp.route('/sessions/<session_id>/rename', methods=['PUT'])
+def rename_session(session_id):
+    """Rename a data session's source name"""
+    if session_id not in DATA_STORE:
+        return jsonify({'error': 'Session not found'}), 404
+    
+    data = request.get_json()
+    new_name = data.get('name', '').strip()
+    
+    if not new_name:
+        return jsonify({'error': 'Name is required'}), 400
+    
+    DATA_STORE[session_id]['source_name'] = new_name
+    logger.info(f"Session {session_id} renamed to: {new_name}")
+    return jsonify({'success': True, 'source_name': new_name})
 
 
 @bp.route('/test-connection', methods=['POST'])

@@ -95,6 +95,37 @@
             <!-- PostgreSQL Panel -->
             <div id="postgresPanel" class="source-panel">
                 <div class="connection-form">
+                    <!-- Credentials Manager -->
+                    <div class="credentials-manager">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="pgSavedCredentials">Load Saved Credentials</label>
+                                <div class="input-with-addon">
+                                    <select id="pgSavedCredentials" class="form-select">
+                                        <option value="">Select saved...</option>
+                                    </select>
+                                    <button type="button" id="deletePgCredentialsBtn" class="btn btn-danger btn-sm"
+                                        title="Delete selected">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                            width="14" height="14">
+                                            <polyline points="3 6 5 6 21 6"></polyline>
+                                            <path
+                                                d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2">
+                                            </path>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="pgCredentialName">Save Current As</label>
+                                <div class="input-with-addon">
+                                    <input type="text" id="pgCredentialName" placeholder="Credential name...">
+                                    <button type="button" id="savePgCredentialsBtn"
+                                        class="btn btn-secondary">Save</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     <div class="form-row">
                         <div class="form-group">
                             <label for="pgHost">Host</label>
@@ -134,6 +165,37 @@
             <!-- Athena Panel -->
             <div id="athenaPanel" class="source-panel">
                 <div class="connection-form">
+                    <!-- Credentials Manager -->
+                    <div class="credentials-manager">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="athenaSavedCredentials">Load Saved Credentials</label>
+                                <div class="input-with-addon">
+                                    <select id="athenaSavedCredentials" class="form-select">
+                                        <option value="">Select saved...</option>
+                                    </select>
+                                    <button type="button" id="deleteAthenaCredentialsBtn" class="btn btn-danger btn-sm"
+                                        title="Delete selected">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                            width="14" height="14">
+                                            <polyline points="3 6 5 6 21 6"></polyline>
+                                            <path
+                                                d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2">
+                                            </path>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="athenaCredentialName">Save Current As</label>
+                                <div class="input-with-addon">
+                                    <input type="text" id="athenaCredentialName" placeholder="Credential name...">
+                                    <button type="button" id="saveAthenaCredentialsBtn"
+                                        class="btn btn-secondary">Save</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     <div class="form-row">
                         <div class="form-group">
                             <label for="athenaRegion">AWS Region</label>
@@ -596,6 +658,26 @@
             <div class="modal-footer">
                 <button class="btn btn-outline modal-cancel">Cancel</button>
                 <button id="confirmExportBtn" class="btn btn-primary">Export</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rename Source Modal -->
+    <div id="renameSourceModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Rename Source</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="newSourceName">New Name</label>
+                    <input type="text" id="newSourceName" placeholder="Enter new name...">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline modal-cancel">Cancel</button>
+                <button id="confirmRenameBtn" class="btn btn-primary">Rename</button>
             </div>
         </div>
     </div>

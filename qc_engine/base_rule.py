@@ -22,6 +22,7 @@ class RuleResult:
     def _convert_to_serializable(obj):
         """Convert numpy types to native Python types for JSON serialization"""
         import numpy as np
+        from datetime import datetime, date
         
         if isinstance(obj, dict):
             return {RuleResult._convert_to_serializable(k): RuleResult._convert_to_serializable(v) 
@@ -36,6 +37,11 @@ class RuleResult:
             return bool(obj)
         elif isinstance(obj, np.ndarray):
             return obj.tolist()
+        elif isinstance(obj, pd.Timestamp):
+            # Keep date format as ISO string (e.g., '2024-01-01' or '2024-01-01T12:30:00')
+            return obj.isoformat() if pd.notna(obj) else None
+        elif isinstance(obj, (datetime, date)):
+            return obj.isoformat()
         elif pd.isna(obj):
             return None
         else:

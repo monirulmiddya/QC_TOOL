@@ -14,6 +14,9 @@ const DataSource = {
     viewerTotalRows: 0,
     viewerColumns: [],
 
+    // Rename state
+    renameSessionId: null,
+
     init() {
         this.setupSourceSelector();
         this.setupFileUpload();
@@ -21,6 +24,8 @@ const DataSource = {
         this.setupAthena();
         this.setupDataViewer();
         this.setupRefreshButton();
+        this.setupCredentialsManager();
+        this.setupRenameModal();
         this.loadSessions();
     },
 
@@ -128,6 +133,12 @@ const DataSource = {
                                 <circle cx="12" cy="12" r="10"></circle>
                             </svg>
                             QC
+                        </button>
+                        <button class="btn btn-outline btn-sm" onclick="DataSource.showRenameModal('${session.session_id}', '${session.source_name.replace(/'/g, "\\'")}')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                            </svg>
                         </button>
                         <button class="btn btn-danger btn-sm" onclick="DataSource.deleteSession('${session.session_id}')">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
@@ -584,6 +595,200 @@ const DataSource = {
             App.showToast(`Query failed: ${error.message}`, 'error');
         } finally {
             App.hideLoading();
+        }
+    },
+
+    // ========================================
+    // Credentials Management
+    // ========================================
+
+    setupCredentialsManager() {
+        // PostgreSQL credentials
+        document.getElementById('savePgCredentialsBtn')?.addEventListener('click', () => {
+            this.saveCredentials('postgres');
+        });
+        document.getElementById('pgSavedCredentials')?.addEventListener('change', (e) => {
+            if (e.target.value) this.loadCredentials('postgres', e.target.value);
+        });
+        document.getElementById('deletePgCredentialsBtn')?.addEventListener('click', () => {
+            const name = document.getElementById('pgSavedCredentials').value;
+            if (name) this.deleteCredentials('postgres', name);
+        });
+
+        // Athena credentials
+        document.getElementById('saveAthenaCredentialsBtn')?.addEventListener('click', () => {
+            this.saveCredentials('athena');
+        });
+        document.getElementById('athenaSavedCredentials')?.addEventListener('change', (e) => {
+            if (e.target.value) this.loadCredentials('athena', e.target.value);
+        });
+        document.getElementById('deleteAthenaCredentialsBtn')?.addEventListener('click', () => {
+            const name = document.getElementById('athenaSavedCredentials').value;
+            if (name) this.deleteCredentials('athena', name);
+        });
+
+        // Load saved credentials lists
+        this.refreshCredentialsList('postgres');
+        this.refreshCredentialsList('athena');
+    },
+
+    saveCredentials(source) {
+        let name, credentials;
+
+        if (source === 'postgres') {
+            name = document.getElementById('pgCredentialName').value.trim();
+            if (!name) {
+                App.showToast('Enter a name for these credentials', 'warning');
+                return;
+            }
+            credentials = {
+                host: document.getElementById('pgHost').value,
+                port: document.getElementById('pgPort').value,
+                database: document.getElementById('pgDatabase').value,
+                user: document.getElementById('pgUser').value,
+                password: document.getElementById('pgPassword').value
+            };
+        } else {
+            name = document.getElementById('athenaCredentialName').value.trim();
+            if (!name) {
+                App.showToast('Enter a name for these credentials', 'warning');
+                return;
+            }
+            credentials = {
+                region: document.getElementById('athenaRegion').value,
+                workgroup: document.getElementById('athenaWorkgroup').value,
+                database: document.getElementById('athenaDatabase').value,
+                s3_output: document.getElementById('athenaS3Output').value,
+                access_key: document.getElementById('athenaAccessKey').value,
+                secret_key: document.getElementById('athenaSecretKey').value
+            };
+        }
+
+        const storageKey = `qc_${source}_credentials`;
+        const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
+        saved[name] = credentials;
+        localStorage.setItem(storageKey, JSON.stringify(saved));
+
+        // Clear name input
+        if (source === 'postgres') {
+            document.getElementById('pgCredentialName').value = '';
+        } else {
+            document.getElementById('athenaCredentialName').value = '';
+        }
+
+        this.refreshCredentialsList(source);
+        App.showToast(`Credentials "${name}" saved`, 'success');
+    },
+
+    loadCredentials(source, name) {
+        const storageKey = `qc_${source}_credentials`;
+        const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
+        const credentials = saved[name];
+
+        if (!credentials) return;
+
+        if (source === 'postgres') {
+            document.getElementById('pgHost').value = credentials.host || '';
+            document.getElementById('pgPort').value = credentials.port || '5432';
+            document.getElementById('pgDatabase').value = credentials.database || '';
+            document.getElementById('pgUser').value = credentials.user || '';
+            document.getElementById('pgPassword').value = credentials.password || '';
+        } else {
+            document.getElementById('athenaRegion').value = credentials.region || 'us-east-1';
+            document.getElementById('athenaWorkgroup').value = credentials.workgroup || 'primary';
+            document.getElementById('athenaDatabase').value = credentials.database || '';
+            document.getElementById('athenaS3Output').value = credentials.s3_output || '';
+            document.getElementById('athenaAccessKey').value = credentials.access_key || '';
+            document.getElementById('athenaSecretKey').value = credentials.secret_key || '';
+        }
+
+        App.showToast(`Credentials "${name}" loaded`, 'success');
+    },
+
+    deleteCredentials(source, name) {
+        if (!confirm(`Delete saved credentials "${name}"?`)) return;
+
+        const storageKey = `qc_${source}_credentials`;
+        const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
+        delete saved[name];
+        localStorage.setItem(storageKey, JSON.stringify(saved));
+
+        this.refreshCredentialsList(source);
+        App.showToast(`Credentials "${name}" deleted`, 'success');
+    },
+
+    refreshCredentialsList(source) {
+        const storageKey = `qc_${source}_credentials`;
+        const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
+        const names = Object.keys(saved);
+
+        let select;
+        if (source === 'postgres') {
+            select = document.getElementById('pgSavedCredentials');
+        } else {
+            select = document.getElementById('athenaSavedCredentials');
+        }
+
+        if (!select) return;
+
+        select.innerHTML = '<option value="">Select saved...</option>' +
+            names.map(n => `<option value="${n}">${n}</option>`).join('');
+    },
+
+    // ========================================
+    // Rename Source
+    // ========================================
+
+    setupRenameModal() {
+        document.getElementById('confirmRenameBtn')?.addEventListener('click', () => {
+            this.renameSource();
+        });
+
+        // Handle Enter key in rename input
+        document.getElementById('newSourceName')?.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                this.renameSource();
+            }
+        });
+    },
+
+    showRenameModal(sessionId, currentName) {
+        this.renameSessionId = sessionId;
+        document.getElementById('newSourceName').value = currentName;
+        App.showModal('renameSourceModal');
+        // Focus the input
+        setTimeout(() => document.getElementById('newSourceName').focus(), 100);
+    },
+
+    async renameSource() {
+        const newName = document.getElementById('newSourceName').value.trim();
+
+        if (!newName) {
+            App.showToast('Please enter a name', 'warning');
+            return;
+        }
+
+        if (!this.renameSessionId) return;
+
+        try {
+            const response = await fetch(`${App.API_BASE}/api/data/sessions/${this.renameSessionId}/rename`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newName })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Rename failed');
+            }
+
+            App.hideModal('renameSourceModal');
+            await this.loadSessions();
+            App.showToast(`Source renamed to "${newName}"`, 'success');
+
+        } catch (error) {
+            App.showToast(`Rename failed: ${error.message}`, 'error');
         }
     }
 };

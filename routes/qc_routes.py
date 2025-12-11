@@ -16,6 +16,26 @@ logger = logging.getLogger(__name__)
 QC_RESULTS_STORE = {}
 
 
+def row_to_dict(row):
+    """Convert a pandas row to dict while preserving date formats.
+    
+    Converts Timestamp objects to ISO format strings instead of the 
+    verbose 'Mon, 01 Jan 2024 00:00:00 GMT' format.
+    """
+    from datetime import datetime, date
+    result = {}
+    for key, val in row.to_dict().items():
+        if isinstance(val, pd.Timestamp):
+            result[key] = val.isoformat() if pd.notna(val) else None
+        elif isinstance(val, (datetime, date)):
+            result[key] = val.isoformat()
+        elif pd.isna(val):
+            result[key] = None
+        else:
+            result[key] = val
+    return result
+
+
 @bp.route('/rules', methods=['GET'])
 def list_rules():
     """List all available QC rules"""
@@ -228,14 +248,14 @@ def compare_datasets():
         for source_name, df in dfs.items():
             key_sets[source_name] = set()
             for idx, row in df.iterrows():
-                key = create_key(row.to_dict(), key_columns, ignore_case, ignore_whitespace)
+                key = create_key(row_to_dict(row), key_columns, ignore_case, ignore_whitespace)
                 key_sets[source_name].add(key)
                 
                 if key not in key_to_rows:
                     key_to_rows[key] = {}
                 if source_name not in key_to_rows[key]:
                     key_to_rows[key][source_name] = []
-                key_to_rows[key][source_name].append(row.to_dict())
+                key_to_rows[key][source_name].append(row_to_dict(row))
         
         # Find duplicates (keys appearing in 2+ sources)
         if analysis.get('duplicates', True):

@@ -105,9 +105,10 @@ class AthenaConnector(BaseConnector):
                     logger.info(f"Query returned {len(df)} rows")
                     return df
                 else:
-                    # Convert to DataFrame if needed
-                    df = pd.DataFrame(df)
-                    logger.info(f"Query returned {len(df)} rows")
+                    # Convert to DataFrame if needed - get column names from cursor
+                    column_names = [desc[0] for desc in cursor.description] if cursor.description else None
+                    df = pd.DataFrame(df, columns=column_names)
+                    logger.info(f"Query returned {len(df)} rows with columns: {column_names}")
                     return df
             
             # Fallback to boto3 direct execution

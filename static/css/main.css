@@ -1690,3 +1690,46 @@ body {
     background: #f0ad4e;
     color: #000;
 }
+
+/* ========================================
+   Credentials Manager
+   ======================================== */
+
+.credentials-manager {
+    margin-bottom: 1.5rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.credentials-manager .form-row {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.credentials-manager .form-group {
+    flex: 1;
+    min-width: 200px;
+}
+
+.credentials-manager .input-with-addon {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.credentials-manager .input-with-addon input,
+.credentials-manager .input-with-addon select {
+    flex: 1;
+    border-radius: var(--border-radius-sm);
+}
+
+.credentials-manager .input-with-addon .btn {
+    flex-shrink: 0;
+}
+
+.credentials-manager .btn-danger.btn-sm {
+    padding: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
