@@ -147,7 +147,44 @@ const Results = {
 
             // Render aggregation details table if present (not just violations)
             let aggDetailsHtml = '';
-            if (Array.isArray(details) && details.length > 0) {
+
+            // Check for grouped aggregation table (from Aggregation Check with Group By)
+            if (details.grouped_table && details.grouped_table.length > 0) {
+                const groupedRows = details.grouped_table;
+                const tableCols = Object.keys(groupedRows[0]);
+                const totalRows = groupedRows.length;
+                const showLimit = 50;
+
+                aggDetailsHtml = `
+                    <div style="margin-top: 1rem;">
+                        <h4 style="font-size: 0.9rem; margin-bottom: 0.5rem;">
+                            Grouped Aggregations (${totalRows} groups)
+                            <button class="btn btn-secondary btn-sm" style="margin-left: 0.5rem; font-size: 0.7rem;" 
+                                onclick="Results.exportGroupedAgg(${resultIdx})">
+                                Export CSV
+                            </button>
+                        </h4>
+                        <div class="table-container" style="max-height: 400px; overflow: auto;">
+                            <table class="data-table">
+                                <thead><tr>${tableCols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
+                                <tbody>
+                                    ${groupedRows.slice(0, showLimit).map(row =>
+                    `<tr>${tableCols.map(c => {
+                        const val = row[c];
+                        return `<td>${val !== null && val !== undefined ? (typeof val === 'number' ? val.toLocaleString() : val) : ''}</td>`;
+                    }).join('')}</tr>`
+                ).join('')}
+                                </tbody>
+                            </table>
+                            ${totalRows > showLimit ? `<p style="color:var(--text-muted); text-align:center; padding:0.5rem;">Showing ${showLimit} of ${totalRows} groups</p>` : ''}
+                        </div>
+                    </div>
+                `;
+
+                // Store for export
+                if (!this._groupedAggData) this._groupedAggData = {};
+                this._groupedAggData[resultIdx] = groupedRows;
+            } else if (Array.isArray(details) && details.length > 0) {
                 const aggCols = Object.keys(details[0]);
                 aggDetailsHtml = `
                     <div style="margin-top: 1rem;">
@@ -263,5 +300,44 @@ const Results = {
         a.remove();
 
         App.showToast(`Exported ${rows.length} rows to CSV`, 'success');
+    },
+
+    // Export grouped aggregation data to CSV
+    exportGroupedAgg(resultIdx) {
+        const rows = this._groupedAggData?.[resultIdx];
+        if (!rows || rows.length === 0) {
+            App.showToast('No grouped data to export', 'warning');
+            return;
+        }
+
+        const columns = Object.keys(rows[0]);
+
+        // Escape CSV values
+        const escapeCSV = (val) => {
+            if (val === null || val === undefined) return '';
+            const str = String(val);
+            if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                return '"' + str.replace(/"/g, '""') + '"';
+            }
+            return str;
+        };
+
+        let csv = columns.map(escapeCSV).join(',') + '\n';
+        rows.forEach(row => {
+            csv += columns.map(c => escapeCSV(row[c])).join(',') + '\n';
+        });
+
+        // Download
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `grouped_aggregation_${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        URL.revokeObjectURL(url);
+        a.remove();
+
+        App.showToast(`Exported ${rows.length} grouped rows to CSV`, 'success');
     }
 };

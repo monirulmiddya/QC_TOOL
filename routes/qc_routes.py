@@ -7,7 +7,8 @@ from flask import Blueprint, request, jsonify
 import pandas as pd
 
 from qc_engine import get_available_rules, create_rule, DatasetComparator
-from routes.data_routes import get_dataframe, DATA_STORE
+from routes.data_routes import get_dataframe
+import storage
 
 bp = Blueprint('qc', __name__)
 logger = logging.getLogger(__name__)
@@ -72,17 +73,17 @@ def run_qc():
     """Run QC checks on loaded data"""
     try:
         data = request.get_json()
-        session_id = data.get('session_id')
+        source_id = data.get('source_id')
         rules_config = data.get('rules', [])
         
-        if not session_id:
-            return jsonify({'error': 'session_id is required'}), 400
+        if not source_id:
+            return jsonify({'error': 'source_id is required'}), 400
         
         if not rules_config:
             return jsonify({'error': 'At least one rule is required'}), 400
         
         # Get the DataFrame
-        df = get_dataframe(session_id)
+        df = get_dataframe(source_id)
         
         # Run each rule
         results = []
@@ -121,7 +122,7 @@ def run_qc():
         import uuid
         result_id = str(uuid.uuid4())
         QC_RESULTS_STORE[result_id] = {
-            'session_id': session_id,
+            'source_id': source_id,
             'results': results,
             'all_passed': all_passed
         }
@@ -148,7 +149,7 @@ def compare_datasets():
     """Compare multiple datasets - find duplicates, unique records, and differences"""
     try:
         data = request.get_json()
-        session_ids = data.get('session_ids', [])
+        source_ids = data.get('source_ids', [])
         key_columns = data.get('key_columns', [])
         value_columns = data.get('value_columns')
         join_type = data.get('join_type', 'full')
@@ -180,14 +181,14 @@ def compare_datasets():
         analysis = data.get('analysis', {})
         
         # Support legacy format (two datasets)
-        if not session_ids:
-            source_session_id = data.get('source_session_id')
-            target_session_id = data.get('target_session_id')
-            if source_session_id and target_session_id:
-                session_ids = [source_session_id, target_session_id]
+        if not source_ids:
+            source_source_id = data.get('source_source_id')
+            target_source_id = data.get('target_source_id')
+            if source_source_id and target_source_id:
+                source_ids = [source_source_id, target_source_id]
         
-        if len(session_ids) < 2:
-            return jsonify({'error': 'At least 2 session_ids are required'}), 400
+        if len(source_ids) < 2:
+            return jsonify({'error': 'At least 2 source_ids are required'}), 400
         
         if not key_columns:
             return jsonify({'error': 'key_columns are required for matching'}), 400
@@ -195,11 +196,11 @@ def compare_datasets():
         # Load all DataFrames
         dfs = {}
         source_order = []  # Track order for LEFT/RIGHT joins
-        for sid in session_ids:
-            stored = DATA_STORE.get(sid)
-            if not stored:
+        for sid in source_ids:
+            source_data = storage.get_data_source(sid)
+            if not source_data:
                 return jsonify({'error': f'Session not found: {sid}'}), 404
-            source_name = stored.get('source_name', stored.get('source', sid[:8]))
+            source_name = source_data.get('source_name', source_data.get('source', sid[:8]))
             dfs[source_name] = get_dataframe(sid)
             source_order.append(source_name)
         
@@ -511,7 +512,7 @@ def compare_datasets():
         result_id = str(uuid.uuid4())
         QC_RESULTS_STORE[result_id] = {
             'type': 'multi_comparison',
-            'session_ids': session_ids,
+            'source_ids': source_ids,
             'result': result
         }
         
@@ -557,16 +558,16 @@ def calculate_formula():
             return jsonify({'error': 'operation must be one of: +, -, *, /'}), 400
         
         # Get dataframes
-        stored1 = DATA_STORE.get(source1_id)
-        stored2 = DATA_STORE.get(source2_id)
+        stored1 = storage.get_data_source(source1_id)
+        stored2 = storage.get_data_source(source2_id)
         
         if not stored1:
             return jsonify({'error': f'Source 1 not found: {source1_id}'}), 404
         if not stored2:
             return jsonify({'error': f'Source 2 not found: {source2_id}'}), 404
         
-        df1 = stored1['data'].copy()
-        df2 = stored2['data'].copy()
+        df1 = pd.DataFrame(stored1['data'])
+        df2 = pd.DataFrame(stored2['data'])
         source1_name = stored1.get('source_name', 'Source1')
         source2_name = stored2.get('source_name', 'Source2')
         

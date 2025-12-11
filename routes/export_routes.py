@@ -131,6 +131,30 @@ def export_excel():
                         worksheet.write(0, 0, f'Failed Rows: {rule_name}', 
                                        workbook.add_format({'bold': True, 'font_size': 12}))
             
+            # Add sheets for grouped aggregation tables
+            if export_data.get('grouped_tables'):
+                for rule_name, grouped_data in export_data['grouped_tables'].items():
+                    if grouped_data:
+                        sheet_name = f"{rule_name[:20]}_Grouped"[:31]
+                        grouped_df = pd.DataFrame(grouped_data)
+                        grouped_df.to_excel(writer, sheet_name=sheet_name, index=False, startrow=1)
+                        
+                        worksheet = writer.sheets[sheet_name]
+                        worksheet.write(0, 0, f'Grouped Aggregations: {rule_name}',
+                                       workbook.add_format({'bold': True, 'font_size': 12}))
+            
+            # Add sheets for violation details (pattern, value set, etc.)
+            if export_data.get('violation_details'):
+                for rule_name, violations in export_data['violation_details'].items():
+                    if violations:
+                        sheet_name = f"{rule_name[:20]}_Details"[:31]
+                        violations_df = pd.DataFrame(violations)
+                        violations_df.to_excel(writer, sheet_name=sheet_name, index=False, startrow=1)
+                        
+                        worksheet = writer.sheets[sheet_name]
+                        worksheet.write(0, 0, f'Violation Details: {rule_name}',
+                                       workbook.add_format({'bold': True, 'font_size': 12}))
+            
             # Comparison results if present
             if 'comparison' in export_data:
                 comp_df = pd.DataFrame(export_data['comparison'])
@@ -195,12 +219,12 @@ def export_data_csv():
     """Export loaded data as CSV"""
     try:
         data = request.get_json()
-        session_id = data.get('session_id')
+        source_id = data.get('source_id')
         
-        if not session_id:
-            return jsonify({'error': 'session_id is required'}), 400
+        if not source_id:
+            return jsonify({'error': 'source_id is required'}), 400
         
-        df = get_dataframe(session_id)
+        df = get_dataframe(source_id)
         
         output = io.StringIO()
         df.to_csv(output, index=False)
@@ -210,7 +234,7 @@ def export_data_csv():
             io.BytesIO(output.getvalue().encode('utf-8')),
             mimetype='text/csv',
             as_attachment=True,
-            download_name=f'data_{session_id[:8]}.csv'
+            download_name=f'data_{source_id[:8]}.csv'
         )
         
     except ValueError as e:
@@ -224,7 +248,9 @@ def _build_export_data(qc_results: dict, include_failed_rows: bool) -> dict:
     """Build export data structure from QC results"""
     export_data = {
         'summary': [],
-        'failed_rows': {}
+        'failed_rows': {},
+        'grouped_tables': {},
+        'violation_details': {}
     }
     
     # Handle multi-source comparison results (from /api/qc/compare)
@@ -278,11 +304,15 @@ def _build_export_data(qc_results: dict, include_failed_rows: bool) -> dict:
             agg = result['aggregation']
             export_data['summary'].append({
                 'Type': f'Aggregation: {agg.get("function", "").upper()}({agg.get("column", "")})',
-                'Count': agg.get('total_groups', 0),
-                'Status': 'PASS' if not agg.get('variances') else 'FAIL'
+                'Source 1': agg.get('source1_value', ''),
+                'Source 2': agg.get('source2_value', ''),
+                'Match': agg.get('match', False),
+                'Status': 'PASS' if agg.get('match') else 'FAIL'
             })
-            if agg.get('results'):
-                export_data['aggregation'] = agg['results']
+            
+            # If aggregation data is present, add to grouped_tables
+            if agg.get('result_data'):
+                export_data['grouped_tables']['Aggregation'] = agg['result_data']
             if include_failed_rows and agg.get('variances'):
                 export_data['failed_rows']['Aggregation_Variances'] = agg['variances']
         
@@ -326,6 +356,24 @@ def _build_export_data(qc_results: dict, include_failed_rows: bool) -> dict:
         if include_failed_rows and result.get('failed_rows'):
             rule_name = result.get('rule_name', 'Unknown')
             export_data['failed_rows'][rule_name] = result['failed_rows']
+        
+        # Add grouped aggregation table if present
+        details = result.get('details', {})
+        if details.get('grouped_table'):
+            rule_name = result.get('rule_name', 'Unknown')
+            export_data['grouped_tables'][rule_name] = details['grouped_table']
+        
+        # Add violation details for new rules (Pattern, Value Set, Uniqueness)
+        if details.get('violations'):
+            rule_name = result.get('rule_name', 'Unknown')
+            export_data['violation_details'][rule_name] = details['violations']
+        elif details.get('invalid_value_frequency'):
+            # For Value Set Check
+            rule_name = result.get('rule_name', 'Unknown')
+            export_data['violation_details'][rule_name] = details['invalid_value_frequency']
+        elif details.get('duplicate_details'):
+            # For Uniqueness Check
+            rule_name = result.get('rule_name', 'Unknown')
+            export_data['violation_details'][rule_name] = details['duplicate_details']
     
     return export_data
-

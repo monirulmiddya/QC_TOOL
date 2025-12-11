@@ -72,12 +72,12 @@ const DataSource = {
     // Load all sessions from backend
     async loadSessions() {
         try {
-            const response = await fetch(`${App.API_BASE}/api/data/sessions`);
+            const response = await fetch(`${App.API_BASE}/api/data/sources`);
             const data = await response.json();
 
             if (data.success) {
-                App.state.sessions = data.sessions;
-                this.renderSourcesList(data.sessions);
+                App.state.sessions = data.sources;
+                this.renderSourcesList(data.sources);
                 App.updateQCView();
                 App.updateCompareView();
             }
@@ -107,7 +107,7 @@ const DataSource = {
 
             // Show SQL button only for database sources with a query
             const showSqlBtn = session.query ? `
-                <button class="btn btn-outline btn-sm" onclick="DataSource.showSqlQuery('${session.session_id}')" title="View SQL Query">
+                <button class="btn btn-outline btn-sm" onclick="DataSource.showSqlQuery('${session.source_id}')" title="View SQL Query">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
                         <polyline points="16 18 22 12 16 6"></polyline>
                         <polyline points="8 6 2 12 8 18"></polyline>
@@ -117,7 +117,7 @@ const DataSource = {
             ` : '';
 
             return `
-                <div class="source-card" data-session-id="${session.session_id}">
+                <div class="source-card" data-session-id="${session.source_id}">
                     <div class="source-card-header">
                         <div class="source-card-icon ${iconClass}">
                             ${iconSvg}
@@ -132,27 +132,27 @@ const DataSource = {
                     </div>
                     <div class="source-card-actions">
                         ${showSqlBtn}
-                        <button class="btn btn-outline btn-sm" onclick="DataSource.viewData('${session.session_id}', '${session.source_name}', ${session.row_count})">
+                        <button class="btn btn-outline btn-sm" onclick="DataSource.viewData('${session.source_id}', '${session.source_name}', ${session.row_count})">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
                                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                                 <circle cx="12" cy="12" r="3"></circle>
                             </svg>
                             View
                         </button>
-                        <button class="btn btn-success btn-sm" onclick="DataSource.selectForQC('${session.session_id}')">
+                        <button class="btn btn-success btn-sm" onclick="DataSource.selectForQC('${session.source_id}')">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
                                 <path d="M9 12l2 2 4-4"></path>
                                 <circle cx="12" cy="12" r="10"></circle>
                             </svg>
                             QC
                         </button>
-                        <button class="btn btn-outline btn-sm" onclick="DataSource.showRenameModal('${session.session_id}', '${session.source_name.replace(/'/g, "\\'")}')">
+                        <button class="btn btn-outline btn-sm" onclick="DataSource.showRenameModal('${session.source_id}', '${session.source_name.replace(/'/g, "\\'")}')">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
                                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
                                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                             </svg>
                         </button>
-                        <button class="btn btn-danger btn-sm" onclick="DataSource.deleteSession('${session.session_id}')">
+                        <button class="btn btn-danger btn-sm" onclick="DataSource.deleteSession('${session.source_id}')">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
                                 <polyline points="3 6 5 6 21 6"></polyline>
                                 <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
@@ -191,11 +191,17 @@ const DataSource = {
     },
 
     // Delete session
-    async deleteSession(sessionId) {
-        if (!confirm('Are you sure you want to delete this data source?')) return;
+    async deleteSession(sourceId) {
+        const warning = '⚠️ WARNING: Deleting this source will permanently remove:\n\n' +
+            '• The source metadata\n' +
+            '• All associated data rows\n\n' +
+            'This action cannot be undone.\n\n' +
+            'Are you sure you want to delete this data source?';
+
+        if (!confirm(warning)) return;
 
         try {
-            const response = await fetch(`${App.API_BASE}/api/data/sessions/${sessionId}`, {
+            const response = await fetch(`${App.API_BASE}/api/data/sources/${sourceId}`, {
                 method: 'DELETE'
             });
 
@@ -435,14 +441,14 @@ const DataSource = {
             }
 
             // Handle new multi-session response
-            const successful = data.sessions.filter(s => s.success);
-            const failed = data.sessions.filter(s => !s.success);
+            const successful = data.sources.filter(s => s.success);
+            const failed = data.sources.filter(s => !s.success);
 
             if (successful.length > 0) {
                 // Add sessions to app state
                 successful.forEach(s => {
                     App.addSession({
-                        session_id: s.session_id,
+                        source_id: s.source_id,
                         source: 'file',
                         source_name: s.filename,
                         row_count: s.row_count,
@@ -592,7 +598,7 @@ const DataSource = {
             }
 
             App.addSession({
-                session_id: data.session_id,
+                source_id: data.source_id,
                 source: source,
                 source_name: `${source.toUpperCase()} Query`,
                 row_count: data.row_count,
@@ -644,7 +650,7 @@ const DataSource = {
         this.refreshCredentialsList('athena');
     },
 
-    saveCredentials(source) {
+    async saveCredentials(source) {
         let name, credentials;
 
         if (source === 'postgres') {
@@ -676,75 +682,107 @@ const DataSource = {
             };
         }
 
-        const storageKey = `qc_${source}_credentials`;
-        const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
-        saved[name] = credentials;
-        localStorage.setItem(storageKey, JSON.stringify(saved));
+        // Save to SQLite via API
+        try {
+            const response = await fetch(`${App.API_BASE}/api/storage/credentials/${source}/${encodeURIComponent(name)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(credentials)
+            });
+            const data = await response.json();
 
-        // Clear name input
-        if (source === 'postgres') {
-            document.getElementById('pgCredentialName').value = '';
-        } else {
-            document.getElementById('athenaCredentialName').value = '';
+            if (data.success) {
+                // Clear name input
+                if (source === 'postgres') {
+                    document.getElementById('pgCredentialName').value = '';
+                } else {
+                    document.getElementById('athenaCredentialName').value = '';
+                }
+                this.refreshCredentialsList(source);
+                App.showToast(`Credentials "${name}" saved`, 'success');
+            } else {
+                App.showToast(`Failed to save credentials: ${data.error}`, 'error');
+            }
+        } catch (error) {
+            App.showToast(`Failed to save credentials: ${error.message}`, 'error');
         }
-
-        this.refreshCredentialsList(source);
-        App.showToast(`Credentials "${name}" saved`, 'success');
     },
 
-    loadCredentials(source, name) {
-        const storageKey = `qc_${source}_credentials`;
-        const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
-        const credentials = saved[name];
+    async loadCredentials(source, name) {
+        // Load from SQLite via API
+        try {
+            const response = await fetch(`${App.API_BASE}/api/storage/credentials/${source}/${encodeURIComponent(name)}`);
+            const data = await response.json();
 
-        if (!credentials) return;
+            if (!data.success || !data.data) {
+                App.showToast('Credentials not found', 'warning');
+                return;
+            }
 
-        if (source === 'postgres') {
-            document.getElementById('pgHost').value = credentials.host || '';
-            document.getElementById('pgPort').value = credentials.port || '5432';
-            document.getElementById('pgDatabase').value = credentials.database || '';
-            document.getElementById('pgUser').value = credentials.user || '';
-            document.getElementById('pgPassword').value = credentials.password || '';
-        } else {
-            document.getElementById('athenaRegion').value = credentials.region || 'us-east-1';
-            document.getElementById('athenaWorkgroup').value = credentials.workgroup || 'primary';
-            document.getElementById('athenaDatabase').value = credentials.database || '';
-            document.getElementById('athenaS3Output').value = credentials.s3_output || '';
-            document.getElementById('athenaAccessKey').value = credentials.access_key || '';
-            document.getElementById('athenaSecretKey').value = credentials.secret_key || '';
+            const credentials = data.data;
+
+            if (source === 'postgres') {
+                document.getElementById('pgHost').value = credentials.host || '';
+                document.getElementById('pgPort').value = credentials.port || '5432';
+                document.getElementById('pgDatabase').value = credentials.database || '';
+                document.getElementById('pgUser').value = credentials.user || '';
+                document.getElementById('pgPassword').value = credentials.password || '';
+            } else {
+                document.getElementById('athenaRegion').value = credentials.region || 'us-east-1';
+                document.getElementById('athenaWorkgroup').value = credentials.workgroup || 'primary';
+                document.getElementById('athenaDatabase').value = credentials.database || '';
+                document.getElementById('athenaS3Output').value = credentials.s3_output || '';
+                document.getElementById('athenaAccessKey').value = credentials.access_key || '';
+                document.getElementById('athenaSecretKey').value = credentials.secret_key || '';
+            }
+
+            App.showToast(`Credentials "${name}" loaded`, 'success');
+        } catch (error) {
+            App.showToast(`Failed to load credentials: ${error.message}`, 'error');
         }
-
-        App.showToast(`Credentials "${name}" loaded`, 'success');
     },
 
-    deleteCredentials(source, name) {
+    async deleteCredentials(source, name) {
         if (!confirm(`Delete saved credentials "${name}"?`)) return;
 
-        const storageKey = `qc_${source}_credentials`;
-        const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
-        delete saved[name];
-        localStorage.setItem(storageKey, JSON.stringify(saved));
+        try {
+            const response = await fetch(`${App.API_BASE}/api/storage/credentials/${source}/${encodeURIComponent(name)}`, {
+                method: 'DELETE'
+            });
+            const data = await response.json();
 
-        this.refreshCredentialsList(source);
-        App.showToast(`Credentials "${name}" deleted`, 'success');
+            if (data.success) {
+                this.refreshCredentialsList(source);
+                App.showToast(`Credentials "${name}" deleted`, 'success');
+            } else {
+                App.showToast(`Failed to delete credentials: ${data.error}`, 'error');
+            }
+        } catch (error) {
+            App.showToast(`Failed to delete credentials: ${error.message}`, 'error');
+        }
     },
 
-    refreshCredentialsList(source) {
-        const storageKey = `qc_${source}_credentials`;
-        const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
-        const names = Object.keys(saved);
+    async refreshCredentialsList(source) {
+        try {
+            const response = await fetch(`${App.API_BASE}/api/storage/credentials/${source}`);
+            const data = await response.json();
 
-        let select;
-        if (source === 'postgres') {
-            select = document.getElementById('pgSavedCredentials');
-        } else {
-            select = document.getElementById('athenaSavedCredentials');
+            const names = data.success ? data.names : [];
+
+            let select;
+            if (source === 'postgres') {
+                select = document.getElementById('pgSavedCredentials');
+            } else {
+                select = document.getElementById('athenaSavedCredentials');
+            }
+
+            if (!select) return;
+
+            select.innerHTML = '<option value="">Select saved...</option>' +
+                names.map(n => `<option value="${n}">${n}</option>`).join('');
+        } catch (error) {
+            console.error('Failed to refresh credentials list:', error);
         }
-
-        if (!select) return;
-
-        select.innerHTML = '<option value="">Select saved...</option>' +
-            names.map(n => `<option value="${n}">${n}</option>`).join('');
     },
 
     // ========================================
@@ -783,7 +821,7 @@ const DataSource = {
         if (!this.renameSessionId) return;
 
         try {
-            const response = await fetch(`${App.API_BASE}/api/data/sessions/${this.renameSessionId}/rename`, {
+            const response = await fetch(`${App.API_BASE}/api/data/sources/${this.renameSessionId}/rename`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: newName })
@@ -809,7 +847,7 @@ const DataSource = {
     // ========================================
 
     showSqlQuery(sessionId) {
-        const session = App.state.sessions.find(s => s.session_id === sessionId);
+        const session = App.state.sessions.find(s => s.source_id === sessionId);
         if (!session || !session.query) {
             App.showToast('No SQL query available for this source', 'warning');
             return;

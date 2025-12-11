@@ -10,7 +10,10 @@ from .rules import (
     RangeCheckRule,
     DataTypeCheckRule,
     CountCheckRule,
-    AggregationCheckRule
+    AggregationCheckRule,
+    PatternCheckRule,
+    UniquenessCheckRule,
+    ValueSetCheckRule
 )
 
 # Rule registry for dynamic rule loading
@@ -20,7 +23,10 @@ RULE_REGISTRY = {
     'range_check': RangeCheckRule,
     'datatype_check': DataTypeCheckRule,
     'count_check': CountCheckRule,
-    'aggregation_check': AggregationCheckRule
+    'aggregation_check': AggregationCheckRule,
+    'pattern_check': PatternCheckRule,
+    'uniqueness_check': UniquenessCheckRule,
+    'value_set_check': ValueSetCheckRule
 }
 
 
@@ -49,5 +55,6 @@ __all__ = [
     'BaseRule', 'RuleResult', 'DatasetComparator',
     'NullCheckRule', 'DuplicateCheckRule', 'RangeCheckRule',
     'DataTypeCheckRule', 'CountCheckRule', 'AggregationCheckRule',
+    'PatternCheckRule', 'UniquenessCheckRule', 'ValueSetCheckRule',
     'RULE_REGISTRY', 'get_available_rules', 'create_rule'
 ]

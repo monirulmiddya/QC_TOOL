@@ -8,6 +8,9 @@ from .range_check import RangeCheckRule
 from .datatype_check import DataTypeCheckRule
 from .count_check import CountCheckRule
 from .aggregation_check import AggregationCheckRule
+from .pattern_check import PatternCheckRule
+from .uniqueness_check import UniquenessCheckRule
+from .value_set_check import ValueSetCheckRule
 
 __all__ = [
     'NullCheckRule',
@@ -15,5 +18,8 @@ __all__ = [
     'RangeCheckRule',
     'DataTypeCheckRule',
     'CountCheckRule',
-    'AggregationCheckRule'
+    'AggregationCheckRule',
+    'PatternCheckRule',
+    'UniquenessCheckRule',
+    'ValueSetCheckRule'
 ]

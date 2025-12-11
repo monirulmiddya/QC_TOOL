@@ -48,12 +48,94 @@ const QCRules = {
         const body = document.getElementById('ruleConfigBody');
         const schema = rule.config_schema.properties || {};
 
-        // Get columns from the selected session
-        const session = App.state.sessions.find(s => s.session_id === App.state.activeSession);
-        const columns = session?.columns || [];
+        // Get columns from the selected source
+        const source = App.state.sessions.find(s => s.source_id === App.state.activeSession);
+        const columns = source?.columns || [];
 
-        body.innerHTML = this.generateFormFields(schema, columns);
+        // Special handling for aggregation_check rule - dynamic rows
+        if (rule.id === 'aggregation_check') {
+            body.innerHTML = this.generateAggregationCheckForm(columns);
+        } else {
+            body.innerHTML = this.generateFormFields(schema, columns);
+        }
+
         App.showModal('ruleConfigModal');
+    },
+
+    // Generate special form for aggregation check with dynamic rows
+    generateAggregationCheckForm(columns) {
+        const aggFunctions = ['sum', 'avg', 'min', 'max', 'count', 'count_distinct', 'std', 'var'];
+
+        let html = `
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label>Aggregations <span style="color:var(--error)">*</span></label>
+                <div id="aggCheckList" class="aggregation-list">
+                    <!-- Dynamic rows will be added here -->
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="QCRules.addAggCheckRow()" style="margin-top: 0.5rem;">
+                    <i class="fas fa-plus"></i> Add Aggregation
+                </button>
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label>Group By</label>
+                <select id="config_group_by" multiple class="form-select" style="min-height: 100px;">
+                    ${columns.map(col => `<option value="${col}">${col}</option>`).join('')}
+                </select>
+                <small style="color:var(--text-muted)">Hold Ctrl/Cmd to select multiple columns to group by</small>
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label>Expected Value</label>
+                <input type="number" id="config_expected_value" step="any" placeholder="Expected result (optional, for single aggregation)">
+                <small style="color:var(--text-muted)">Only used when single aggregation is configured</small>
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label>Tolerance</label>
+                <input type="number" id="config_tolerance" value="0" step="any" placeholder="Acceptable difference">
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label>Tolerance Type</label>
+                <select id="config_tolerance_type" class="form-select">
+                    <option value="absolute" selected>Absolute</option>
+                    <option value="percentage">Percentage</option>
+                </select>
+            </div>
+        `;
+
+        // Store columns and functions for later use
+        this._aggCheckColumns = columns;
+        this._aggCheckFunctions = aggFunctions;
+
+        // Add initial row after a short delay
+        setTimeout(() => this.addAggCheckRow(), 50);
+
+        return html;
+    },
+
+    // Add a new aggregation row
+    addAggCheckRow() {
+        const container = document.getElementById('aggCheckList');
+        if (!container) return;
+
+        const columns = this._aggCheckColumns || [];
+        const functions = this._aggCheckFunctions || ['sum', 'avg', 'min', 'max', 'count'];
+
+        const row = document.createElement('div');
+        row.className = 'aggregation-row';
+        row.innerHTML = `
+            <select class="form-select agg-check-column" style="flex: 2;">
+                <option value="">Select column...</option>
+                ${columns.map(col => `<option value="${col}">${col}</option>`).join('')}
+            </select>
+            <select class="form-select agg-check-function" style="flex: 1;">
+                ${functions.map(fn => `<option value="${fn}">${fn.toUpperCase()}</option>`).join('')}
+            </select>
+            <button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()" title="Remove">✕</button>
+        `;
+        container.appendChild(row);
     },
 
     // Method called when session changes to update column lists
@@ -142,29 +224,74 @@ const QCRules = {
         const schema = rule.config_schema.properties || {};
         const config = {};
 
-        // Gather form values
-        for (const key of Object.keys(schema)) {
-            const input = document.getElementById(`config_${key}`);
-            if (!input) continue;
+        // Special handling for aggregation_check - collect dynamic rows
+        if (rule.id === 'aggregation_check') {
+            const rows = document.querySelectorAll('#aggCheckList .aggregation-row');
+            const aggregations = [];
 
-            if (input.type === 'checkbox') {
-                config[key] = input.checked;
-            } else if (input.multiple) {
-                config[key] = Array.from(input.selectedOptions).map(o => o.value);
-            } else if (input.type === 'number') {
-                const val = parseFloat(input.value);
-                if (!isNaN(val)) config[key] = val;
-            } else if (input.value) {
-                config[key] = input.value;
-            }
-        }
+            rows.forEach(row => {
+                const column = row.querySelector('.agg-check-column')?.value;
+                const func = row.querySelector('.agg-check-function')?.value;
+                if (column && func) {
+                    aggregations.push({ column, function: func });
+                }
+            });
 
-        // Validate required fields
-        const required = rule.config_schema.required || [];
-        for (const field of required) {
-            if (!config[field] || (Array.isArray(config[field]) && config[field].length === 0)) {
-                App.showToast(`${field} is required`, 'error');
+            if (aggregations.length === 0) {
+                App.showToast('Please add at least one aggregation', 'error');
                 return;
+            }
+
+            config.aggregations = aggregations;
+
+            // Get group_by
+            const groupBySelect = document.getElementById('config_group_by');
+            if (groupBySelect) {
+                config.group_by = Array.from(groupBySelect.selectedOptions).map(o => o.value);
+            }
+
+            // Get expected value
+            const expectedInput = document.getElementById('config_expected_value');
+            if (expectedInput && expectedInput.value) {
+                config.expected_value = parseFloat(expectedInput.value);
+            }
+
+            // Get tolerance
+            const toleranceInput = document.getElementById('config_tolerance');
+            if (toleranceInput && toleranceInput.value) {
+                config.tolerance = parseFloat(toleranceInput.value);
+            }
+
+            // Get tolerance type
+            const toleranceTypeSelect = document.getElementById('config_tolerance_type');
+            if (toleranceTypeSelect) {
+                config.tolerance_type = toleranceTypeSelect.value;
+            }
+        } else {
+            // Standard schema-based form collection
+            for (const key of Object.keys(schema)) {
+                const input = document.getElementById(`config_${key}`);
+                if (!input) continue;
+
+                if (input.type === 'checkbox') {
+                    config[key] = input.checked;
+                } else if (input.multiple) {
+                    config[key] = Array.from(input.selectedOptions).map(o => o.value);
+                } else if (input.type === 'number') {
+                    const val = parseFloat(input.value);
+                    if (!isNaN(val)) config[key] = val;
+                } else if (input.value) {
+                    config[key] = input.value;
+                }
+            }
+
+            // Validate required fields
+            const required = rule.config_schema.required || [];
+            for (const field of required) {
+                if (!config[field] || (Array.isArray(config[field]) && config[field].length === 0)) {
+                    App.showToast(`${field} is required`, 'error');
+                    return;
+                }
             }
         }
 
@@ -194,7 +321,18 @@ const QCRules = {
 
         container.innerHTML = this.activeRules.map((rule, index) => {
             const configSummary = Object.entries(rule.config)
-                .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+                .map(([k, v]) => {
+                    // Special formatting for aggregations array
+                    if (k === 'aggregations' && Array.isArray(v)) {
+                        const aggStr = v.map(a => `${(a.function || 'SUM').toUpperCase()}(${a.column})`).join(', ');
+                        return `${k}: ${aggStr}`;
+                    }
+                    // Handle regular arrays
+                    if (Array.isArray(v)) {
+                        return `${k}: ${v.join(', ')}`;
+                    }
+                    return `${k}: ${v}`;
+                })
                 .join(' | ');
 
             return `
@@ -244,7 +382,7 @@ const QCRules = {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    session_id: App.state.activeSession,
+                    source_id: App.state.activeSession,
                     rules: this.activeRules.map(r => ({
                         rule_id: r.rule_id,
                         config: r.config
@@ -341,7 +479,7 @@ const QCRules = {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    session_ids: sessionIds,
+                    source_ids: sessionIds,
                     key_columns: keyColumns,
                     value_columns: valueColumns.length > 0 ? valueColumns : null,
                     join_type: joinType,
@@ -503,7 +641,7 @@ const QCRules = {
 
         if (!sessionId) return;
 
-        const session = App.state.sessions.find(s => s.session_id === sessionId);
+        const session = App.state.sessions.find(s => s.source_id === sessionId);
         if (session?.columns) {
             session.columns.forEach(col => {
                 select.innerHTML += `<option value="${col}">${col}</option>`;
@@ -518,7 +656,7 @@ const QCRules = {
         if (!source1 || !source2) return;
 
         const options = App.state.sessions.map(s =>
-            `<option value="${s.session_id}">${s.source_name}</option>`
+            `<option value="${s.source_id}">${s.source_name}</option>`
         ).join('');
 
         source1.innerHTML = '<option value="">Select source...</option>' + options;
@@ -536,8 +674,8 @@ const QCRules = {
 
         if (!source1Id || !source2Id) return;
 
-        const session1 = App.state.sessions.find(s => s.session_id === source1Id);
-        const session2 = App.state.sessions.find(s => s.session_id === source2Id);
+        const session1 = App.state.sessions.find(s => s.source_id === source1Id);
+        const session2 = App.state.sessions.find(s => s.source_id === source2Id);
 
         if (!session1 || !session2) return;
 

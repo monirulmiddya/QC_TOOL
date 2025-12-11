@@ -75,10 +75,10 @@ const App = {
     async updateQCView() {
         // Fetch sessions from API to ensure we have latest data
         try {
-            const response = await fetch(`${this.API_BASE}/api/data/sessions`);
+            const response = await fetch(`${this.API_BASE}/api/data/sources`);
             const data = await response.json();
-            if (data.success && data.sessions) {
-                this.state.sessions = data.sessions;
+            if (data.success && data.sources) {
+                this.state.sessions = data.sources;
             }
         } catch (e) {
             console.error('Failed to fetch sessions:', e);
@@ -111,12 +111,12 @@ const App = {
 
             // Auto-select first session if none selected
             if (!this.state.activeSession && this.state.sessions.length > 0) {
-                this.state.activeSession = this.state.sessions[0].session_id;
+                this.state.activeSession = this.state.sessions[0].source_id;
             }
 
             select.innerHTML = '<option value="">Select source...</option>' +
                 this.state.sessions.map(s =>
-                    `<option value="${s.session_id}" ${s.session_id === this.state.activeSession ? 'selected' : ''}>
+                    `<option value="${s.source_id}" ${s.source_id === this.state.activeSession ? 'selected' : ''}>
                         ${s.source_name || s.source} (${s.row_count.toLocaleString()} rows)
                     </option>`
                 ).join('');
@@ -139,7 +139,7 @@ const App = {
     // Update selected source info display
     updateSelectedSourceInfo() {
         const infoDiv = document.getElementById('selectedSourceInfo');
-        const session = this.state.sessions.find(s => s.session_id === this.state.activeSession);
+        const session = this.state.sessions.find(s => s.source_id === this.state.activeSession);
 
         if (!session) {
             infoDiv.innerHTML = '';
@@ -157,10 +157,10 @@ const App = {
     async updateCompareView() {
         // Fetch sessions from API to ensure we have latest data
         try {
-            const response = await fetch(`${this.API_BASE}/api/data/sessions`);
+            const response = await fetch(`${this.API_BASE}/api/data/sources`);
             const data = await response.json();
-            if (data.success && data.sessions) {
-                this.state.sessions = data.sessions;
+            if (data.success && data.sources) {
+                this.state.sessions = data.sources;
             }
         } catch (e) {
             console.error('Failed to fetch sessions:', e);
@@ -192,8 +192,8 @@ const App = {
         const sourcesList = document.getElementById('compareSourcesList');
         if (sourcesList) {
             sourcesList.innerHTML = this.state.sessions.map(s => `
-                <label class="source-checkbox-card" data-session-id="${s.session_id}">
-                    <input type="checkbox" class="compare-source-checkbox" value="${s.session_id}">
+                <label class="source-checkbox-card" data-session-id="${s.source_id}">
+                    <input type="checkbox" class="compare-source-checkbox" value="${s.source_id}">
                     <div class="source-checkbox-info">
                         <div class="source-checkbox-name">${s.source_name || s.source}</div>
                         <div class="source-checkbox-meta">${s.row_count.toLocaleString()} rows · ${s.column_count || s.columns?.length || 0} columns</div>
@@ -235,7 +235,7 @@ const App = {
         this.state.allSourceColumns = {};  // Store all columns per source
 
         checkboxes.forEach(cb => {
-            const session = this.state.sessions.find(s => s.session_id === cb.value);
+            const session = this.state.sessions.find(s => s.source_id === cb.value);
             if (session && session.columns) {
                 this.state.allSourceColumns[session.source_name || session.source] = session.columns;
                 if (commonColumns === null) {
@@ -299,7 +299,7 @@ const App = {
         const checkboxes = document.querySelectorAll('.compare-source-checkbox:checked');
         let columns = [];
         checkboxes.forEach(cb => {
-            const session = this.state.sessions.find(s => s.session_id === cb.value);
+            const session = this.state.sessions.find(s => s.source_id === cb.value);
             if (session && session.columns) {
                 columns = [...new Set([...columns, ...session.columns])];
             }
@@ -378,7 +378,7 @@ const App = {
     },
 
     // Save current config as template
-    saveTemplate() {
+    async saveTemplate() {
         const name = document.getElementById('templateName')?.value.trim();
         if (!name) {
             this.showToast('Enter a template name', 'warning');
@@ -403,64 +403,92 @@ const App = {
             showNotMatched: document.getElementById('showNotMatched')?.checked
         };
 
-        const templates = JSON.parse(localStorage.getItem('qc_templates') || '{}');
-        templates[name] = config;
-        localStorage.setItem('qc_templates', JSON.stringify(templates));
+        // Save to SQLite via API
+        try {
+            const response = await fetch(`${this.API_BASE}/api/storage/templates/${encodeURIComponent(name)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(config)
+            });
+            const data = await response.json();
 
-        this.refreshTemplateList();
-        document.getElementById('templateName').value = '';
-        this.showToast(`Template "${name}" saved`, 'success');
+            if (data.success) {
+                this.refreshTemplateList();
+                document.getElementById('templateName').value = '';
+                this.showToast(`Template "${name}" saved`, 'success');
+            } else {
+                this.showToast(`Failed to save template: ${data.error}`, 'error');
+            }
+        } catch (error) {
+            this.showToast(`Failed to save template: ${error.message}`, 'error');
+        }
     },
 
     // Load a template
-    loadTemplate(name) {
+    async loadTemplate(name) {
         if (!name) return;
 
-        const templates = JSON.parse(localStorage.getItem('qc_templates') || '{}');
-        const config = templates[name];
-        if (!config) return;
+        try {
+            const response = await fetch(`${this.API_BASE}/api/storage/templates/${encodeURIComponent(name)}`);
+            const data = await response.json();
 
-        // Apply config
-        if (config.joinType) document.getElementById('compareJoinType').value = config.joinType;
-        if (config.tolerance) document.getElementById('compareTolerance').value = config.tolerance;
-        if (config.toleranceType) document.getElementById('compareToleranceType').value = config.toleranceType;
-        if (config.dateTolerance) document.getElementById('compareDateTolerance').value = config.dateTolerance;
-        document.getElementById('compareIgnoreCase').checked = config.ignoreCase || false;
-        document.getElementById('compareIgnoreWhitespace').checked = config.ignoreWhitespace || false;
-        document.getElementById('compareNullEqualsNull').checked = config.nullEqualsNull !== false;
-        document.getElementById('enableAggregation').checked = config.enableAggregation || false;
-        if (config.aggFunction) document.getElementById('aggFunction').value = config.aggFunction;
-        document.getElementById('enableFuzzyMatch').checked = config.enableFuzzyMatch || false;
-        if (config.fuzzyThreshold) document.getElementById('fuzzyThreshold').value = config.fuzzyThreshold;
-        document.getElementById('showDuplicates').checked = config.showDuplicates !== false;
-        document.getElementById('showUnique').checked = config.showUnique !== false;
-        document.getElementById('showNotMatched').checked = config.showNotMatched !== false;
+            if (!data.success || !data.config) {
+                this.showToast('Template not found', 'warning');
+                return;
+            }
 
-        // Handle transformation multi-select
-        if (config.transformations) {
-            const select = document.getElementById('transformations');
-            Array.from(select.options).forEach(opt => {
-                opt.selected = config.transformations.includes(opt.value);
-            });
+            const config = data.config;
+
+            // Apply config
+            if (config.joinType) document.getElementById('compareJoinType').value = config.joinType;
+            if (config.tolerance) document.getElementById('compareTolerance').value = config.tolerance;
+            if (config.toleranceType) document.getElementById('compareToleranceType').value = config.toleranceType;
+            if (config.dateTolerance) document.getElementById('compareDateTolerance').value = config.dateTolerance;
+            document.getElementById('compareIgnoreCase').checked = config.ignoreCase || false;
+            document.getElementById('compareIgnoreWhitespace').checked = config.ignoreWhitespace || false;
+            document.getElementById('compareNullEqualsNull').checked = config.nullEqualsNull !== false;
+            document.getElementById('enableAggregation').checked = config.enableAggregation || false;
+            if (config.aggFunction) document.getElementById('aggFunction').value = config.aggFunction;
+            document.getElementById('enableFuzzyMatch').checked = config.enableFuzzyMatch || false;
+            if (config.fuzzyThreshold) document.getElementById('fuzzyThreshold').value = config.fuzzyThreshold;
+            document.getElementById('showDuplicates').checked = config.showDuplicates !== false;
+            document.getElementById('showUnique').checked = config.showUnique !== false;
+            document.getElementById('showNotMatched').checked = config.showNotMatched !== false;
+
+            // Handle transformation multi-select
+            if (config.transformations) {
+                const select = document.getElementById('transformations');
+                Array.from(select.options).forEach(opt => {
+                    opt.selected = config.transformations.includes(opt.value);
+                });
+            }
+
+            // Toggle aggregation options visibility
+            const aggOptions = document.getElementById('aggregationOptions');
+            if (aggOptions) aggOptions.classList.toggle('hidden', !config.enableAggregation);
+
+            this.showToast(`Template "${name}" loaded`, 'success');
+        } catch (error) {
+            this.showToast(`Failed to load template: ${error.message}`, 'error');
         }
-
-        // Toggle aggregation options visibility
-        const aggOptions = document.getElementById('aggregationOptions');
-        if (aggOptions) aggOptions.classList.toggle('hidden', !config.enableAggregation);
-
-        this.showToast(`Template "${name}" loaded`, 'success');
     },
 
     // Refresh template dropdown
-    refreshTemplateList() {
+    async refreshTemplateList() {
         const select = document.getElementById('loadTemplate');
         if (!select) return;
 
-        const templates = JSON.parse(localStorage.getItem('qc_templates') || '{}');
-        const names = Object.keys(templates);
+        try {
+            const response = await fetch(`${this.API_BASE}/api/storage/templates`);
+            const data = await response.json();
 
-        select.innerHTML = '<option value="">Select saved template...</option>' +
-            names.map(n => `<option value="${n}">${n}</option>`).join('');
+            const names = data.success ? data.names : [];
+
+            select.innerHTML = '<option value="">Select saved template...</option>' +
+                names.map(n => `<option value="${n}">${n}</option>`).join('');
+        } catch (error) {
+            console.error('Failed to refresh template list:', error);
+        }
     },
 
     // Setup column mapping UI
@@ -643,7 +671,7 @@ const App = {
     // Add session to state
     addSession(sessionData) {
         this.state.sessions.push(sessionData);
-        this.state.activeSession = sessionData.session_id;
+        this.state.activeSession = sessionData.source_id;
         this.updateQCView();
         this.updateCompareView();
     },

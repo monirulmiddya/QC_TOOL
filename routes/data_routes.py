@@ -5,40 +5,14 @@ Endpoints for data loading and querying.
 import os
 import uuid
 import logging
-from flask import Blueprint, request, jsonify, current_app, session
+from flask import Blueprint, request, jsonify, current_app
 import pandas as pd
 
 from connectors import PostgresConnector, AthenaConnector, FileConnector
+import storage
 
 bp = Blueprint('data', __name__)
 logger = logging.getLogger(__name__)
-
-# In-memory storage for loaded data (in production, use Redis or similar)
-DATA_STORE = {}
-
-
-def get_unique_source_name(base_name: str) -> str:
-    """Generate a unique source name by appending (1), (2), etc. if name already exists.
-    
-    Args:
-        base_name: The original source name (e.g., 'data.csv' or 'POSTGRES Query')
-        
-    Returns:
-        A unique source name (e.g., 'data.csv', 'data.csv (1)', 'data.csv (2)')
-    """
-    existing_names = {stored.get('source_name', '') for stored in DATA_STORE.values()}
-    
-    # If name doesn't exist, use as is
-    if base_name not in existing_names:
-        return base_name
-    
-    # Find the next available number
-    counter = 1
-    while True:
-        new_name = f"{base_name} ({counter})"
-        if new_name not in existing_names:
-            return new_name
-        counter += 1
 
 
 def df_to_records(df):
@@ -102,27 +76,29 @@ def execute_query():
         with connector:
             df = connector.execute_query(query)
         
-        # Store data with session ID
-        session_id = str(uuid.uuid4())
-        unique_name = get_unique_source_name(f"{source.upper()} Query")
-        DATA_STORE[session_id] = {
-            'data': df,
-            'source': source,
-            'source_name': unique_name,
-            'query': query,
-            'columns': df.columns.tolist(),
-            'row_count': len(df),
-            'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()}
-        }
+        # Store data in SQLite
+        source_id = str(uuid.uuid4())
+        unique_name = storage.get_unique_source_name(f"{source.upper()} Query")
+        columns = df.columns.tolist()
+        data_records = df_to_records(df)
         
-        logger.info(f"Query executed successfully. Session: {session_id}, Rows: {len(df)}")
+        storage.save_data_source(
+            source_id=source_id,
+            source_name=unique_name,
+            source_type=source,
+            columns=columns,
+            data=data_records,
+            query=query
+        )
+        
+        logger.info(f"Query executed successfully. Source: {source_id}, Rows: {len(df)}")
         
         return jsonify({
             'success': True,
-            'session_id': session_id,
-            'columns': df.columns.tolist(),
+            'source_id': source_id,
+            'columns': columns,
             'row_count': len(df),
-            'preview': df_to_records(df.head(100)),
+            'preview': data_records[:100],
             'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()}
         })
         
@@ -133,7 +109,7 @@ def execute_query():
 
 @bp.route('/upload', methods=['POST'])
 def upload_files():
-    """Upload Excel or CSV files - creates separate session for each file"""
+    """Upload Excel or CSV files - creates separate source for each file"""
     try:
         if 'files' not in request.files:
             return jsonify({'error': 'No files provided'}), 400
@@ -145,7 +121,7 @@ def upload_files():
         upload_folder = current_app.config['UPLOAD_FOLDER']
         os.makedirs(upload_folder, exist_ok=True)
         
-        created_sessions = []
+        created_sources = []
         
         for file in files:
             if file.filename == '':
@@ -154,7 +130,7 @@ def upload_files():
             # Check extension
             ext = os.path.splitext(file.filename)[1].lower()
             if ext not in {'.csv', '.xlsx', '.xls'}:
-                created_sessions.append({
+                created_sources.append({
                     'filename': file.filename,
                     'success': False,
                     'error': f'Unsupported file type: {ext}'
@@ -163,53 +139,56 @@ def upload_files():
             
             try:
                 # Generate unique filename
-                unique_name = f"{uuid.uuid4()}_{file.filename}"
-                file_path = os.path.join(upload_folder, unique_name)
+                unique_filename = f"{uuid.uuid4()}_{file.filename}"
+                file_path = os.path.join(upload_folder, unique_filename)
                 file.save(file_path)
                 
                 # Load file using connector
                 connector = FileConnector(file_path=file_path)
                 df = connector.execute_query()
                 
-                # Create session for this file
-                session_id = str(uuid.uuid4())
-                unique_name = get_unique_source_name(file.filename)
-                DATA_STORE[session_id] = {
-                    'data': df,
-                    'source': 'file',
-                    'source_name': unique_name,
-                    'file_path': file_path,
-                    'columns': df.columns.tolist(),
-                    'row_count': len(df),
-                    'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()}
-                }
+                # Create source for this file
+                source_id = str(uuid.uuid4())
+                unique_name = storage.get_unique_source_name(file.filename)
+                columns = df.columns.tolist()
+                data_records = df_to_records(df)
                 
-                created_sessions.append({
-                    'session_id': session_id,
+                # Save to SQLite
+                storage.save_data_source(
+                    source_id=source_id,
+                    source_name=unique_name,
+                    source_type='file',
+                    columns=columns,
+                    data=data_records,
+                    query=file_path  # Store file path in query field for reference
+                )
+                
+                created_sources.append({
+                    'source_id': source_id,
                     'filename': file.filename,
                     'success': True,
-                    'columns': df.columns.tolist(),
+                    'columns': columns,
                     'row_count': len(df),
                     'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()}
                 })
                 
-                logger.info(f"File uploaded: {file.filename} -> Session: {session_id}, Rows: {len(df)}")
+                logger.info(f"File uploaded: {file.filename} -> Source: {source_id}, Rows: {len(df)}")
                 
             except Exception as e:
-                created_sessions.append({
+                created_sources.append({
                     'filename': file.filename,
                     'success': False,
                     'error': str(e)
                 })
                 logger.error(f"Failed to load {file.filename}: {e}")
         
-        successful = [s for s in created_sessions if s.get('success')]
-        failed = [s for s in created_sessions if not s.get('success')]
+        successful = [s for s in created_sources if s.get('success')]
+        failed = [s for s in created_sources if not s.get('success')]
         
         return jsonify({
             'success': len(successful) > 0,
-            'sessions': created_sessions,
-            'total_files': len(created_sessions),
+            'sources': created_sources,
+            'total_files': len(created_sources),
             'successful_count': len(successful),
             'failed_count': len(failed)
         })
@@ -219,30 +198,28 @@ def upload_files():
         return jsonify({'error': str(e)}), 500
 
 
-@bp.route('/preview/<session_id>', methods=['GET'])
-def get_preview(session_id):
+@bp.route('/preview/<source_id>', methods=['GET'])
+def get_preview(source_id):
     """Get preview of loaded data"""
     try:
-        if session_id not in DATA_STORE:
-            return jsonify({'error': 'Session not found'}), 404
-        
-        stored = DATA_STORE[session_id]
-        df = stored['data']
+        source_data = storage.get_data_source(source_id)
+        if not source_data:
+            return jsonify({'error': 'Source not found'}), 404
         
         offset = request.args.get('offset', 0, type=int)
         limit = request.args.get('limit', 100, type=int)
         
-        subset = df.iloc[offset:offset + limit]
+        data = source_data['data']
+        subset = data[offset:offset + limit]
         
         return jsonify({
             'success': True,
-            'session_id': session_id,
-            'columns': df.columns.tolist(),
-            'total_rows': len(df),
+            'source_id': source_id,
+            'columns': source_data['columns'],
+            'total_rows': source_data['row_count'],
             'offset': offset,
             'limit': limit,
-            'data': df_to_records(subset),
-            'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()}
+            'data': subset
         })
         
     except Exception as e:
@@ -250,70 +227,61 @@ def get_preview(session_id):
         return jsonify({'error': str(e)}), 500
 
 
-@bp.route('/sessions', methods=['GET'])
-def list_sessions():
-    """List all active data sessions with details"""
-    sessions = []
-    for sid, stored in DATA_STORE.items():
-        session_info = {
-            'session_id': sid,
-            'source': stored['source'],
-            'source_name': stored.get('source_name', stored['source']),
-            'row_count': stored['row_count'],
-            'column_count': len(stored['columns']),
-            'columns': stored['columns'],
-            'dtypes': stored.get('dtypes', {})
-        }
-        # Add query info for database sources
-        if 'query' in stored:
-            session_info['query'] = stored['query']
-        sessions.append(session_info)
-    
-    return jsonify({'success': True, 'sessions': sessions, 'count': len(sessions)})
+@bp.route('/sources', methods=['GET'])
+def list_sources():
+    """List all data sources with details"""
+    try:
+        sources = storage.list_data_sources()
+        return jsonify({'success': True, 'sources': sources, 'count': len(sources)})
+    except Exception as e:
+        logger.error(f"List sources failed: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
-@bp.route('/sessions/<session_id>', methods=['DELETE'])
-def delete_session(session_id):
-    """Delete a data session"""
-    if session_id not in DATA_STORE:
-        return jsonify({'error': 'Session not found'}), 404
-    
-    # Clean up files if it was a file upload
-    stored = DATA_STORE[session_id]
-    if stored['source'] == 'file':
-        # Handle new single file format
-        if 'file_path' in stored:
+@bp.route('/sources/<source_id>', methods=['DELETE'])
+def delete_source(source_id):
+    """Delete a data source and all related data"""
+    try:
+        source_data = storage.get_data_source(source_id)
+        if not source_data:
+            return jsonify({'error': 'Source not found'}), 404
+        
+        # Clean up uploaded files
+        if source_data['source'] == 'file' and source_data.get('query'):
             try:
-                os.remove(stored['file_path'])
+                file_path = source_data['query']
+                if os.path.exists(file_path):
+                    os.remove(file_path)
             except:
                 pass
-        # Handle old multi-file format (backwards compatibility)
-        elif 'files' in stored:
-            for file_info in stored['files']:
-                try:
-                    os.remove(file_info['path'])
-                except:
-                    pass
-    
-    del DATA_STORE[session_id]
-    return jsonify({'success': True, 'message': 'Session deleted'})
+        
+        storage.delete_data_source(source_id)
+        return jsonify({'success': True, 'message': 'Source deleted'})
+    except Exception as e:
+        logger.error(f"Delete source failed: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
-@bp.route('/sessions/<session_id>/rename', methods=['PUT'])
-def rename_session(session_id):
-    """Rename a data session's source name"""
-    if session_id not in DATA_STORE:
-        return jsonify({'error': 'Session not found'}), 404
-    
-    data = request.get_json()
-    new_name = data.get('name', '').strip()
-    
-    if not new_name:
-        return jsonify({'error': 'Name is required'}), 400
-    
-    DATA_STORE[session_id]['source_name'] = new_name
-    logger.info(f"Session {session_id} renamed to: {new_name}")
-    return jsonify({'success': True, 'source_name': new_name})
+@bp.route('/sources/<source_id>/rename', methods=['PUT'])
+def rename_source(source_id):
+    """Rename a data source"""
+    try:
+        source_data = storage.get_data_source(source_id)
+        if not source_data:
+            return jsonify({'error': 'Source not found'}), 404
+        
+        data = request.get_json()
+        new_name = data.get('name', '').strip()
+        
+        if not new_name:
+            return jsonify({'error': 'Name is required'}), 400
+        
+        storage.update_source_name(source_id, new_name)
+        logger.info(f"Source {source_id} renamed to: {new_name}")
+        return jsonify({'success': True, 'source_name': new_name})
+    except Exception as e:
+        logger.error(f"Rename source failed: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @bp.route('/test-connection', methods=['POST'])
@@ -352,8 +320,11 @@ def test_connection():
 
 
 # Accessor function for other modules
-def get_dataframe(session_id: str) -> pd.DataFrame:
-    """Get DataFrame by session ID"""
-    if session_id not in DATA_STORE:
-        raise ValueError(f"Session not found: {session_id}")
-    return DATA_STORE[session_id]['data']
+def get_dataframe(source_id: str) -> pd.DataFrame:
+    """Get DataFrame by source ID"""
+    source_data = storage.get_data_source(source_id)
+    if not source_data:
+        raise ValueError(f"Source not found: {source_id}")
+    
+    # Convert list of dicts back to DataFrame
+    return pd.DataFrame(source_data['data'])

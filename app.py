@@ -9,7 +9,7 @@ from flask_cors import CORS
 from config import config
 
 # Import blueprints
-from routes import data_routes, qc_routes, export_routes
+from routes import data_routes, qc_routes, export_routes, storage_routes
 
 
 def create_app(config_name=None):
@@ -33,6 +33,7 @@ def create_app(config_name=None):
     app.register_blueprint(data_routes.bp, url_prefix='/api/data')
     app.register_blueprint(qc_routes.bp, url_prefix='/api/qc')
     app.register_blueprint(export_routes.bp, url_prefix='/api/export')
+    app.register_blueprint(storage_routes.bp, url_prefix='/api/storage')
     
     # Main route
     @app.route('/')
