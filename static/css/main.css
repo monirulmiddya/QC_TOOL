@@ -1157,6 +1157,7 @@ body {
 
 .source-card-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.5rem;
     margin-top: 1rem;
     padding-top: 1rem;
@@ -1164,9 +1165,10 @@ body {
 }
 
 .source-card-actions .btn {
-    flex: 1;
+    flex: 0 1 auto;
+    min-width: fit-content;
     font-size: 0.85rem;
-    padding: 0.5rem;
+    padding: 0.5rem 0.75rem;
 }
 
 .btn-success {
