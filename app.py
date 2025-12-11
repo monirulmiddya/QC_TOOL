@@ -40,6 +40,11 @@ def create_app(config_name=None):
     def index():
         return render_template('index.html')
     
+    # Chart test route
+    @app.route('/chart_test')
+    def chart_test():
+        return render_template('chart_test.html')
+    
     # Error handlers
     @app.errorhandler(400)
     def bad_request(error):

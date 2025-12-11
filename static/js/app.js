@@ -259,7 +259,7 @@ const App = {
         // Setup column mapping, aggregation toggle, and templates
         this.setupColumnMapping();
         this.setupAggregationToggle();
-        this.setupTemplates();
+
     },
 
     // Setup aggregation toggle and dynamic rows
@@ -360,136 +360,7 @@ const App = {
         };
     },
 
-    // Setup QC templates
-    setupTemplates() {
-        const saveBtn = document.getElementById('saveTemplateBtn');
-        const loadSelect = document.getElementById('loadTemplate');
 
-        if (saveBtn && !saveBtn._hasListener) {
-            saveBtn.addEventListener('click', () => this.saveTemplate());
-            saveBtn._hasListener = true;
-        }
-
-        if (loadSelect && !loadSelect._hasListener) {
-            loadSelect.addEventListener('change', () => this.loadTemplate(loadSelect.value));
-            loadSelect._hasListener = true;
-            this.refreshTemplateList();
-        }
-    },
-
-    // Save current config as template
-    async saveTemplate() {
-        const name = document.getElementById('templateName')?.value.trim();
-        if (!name) {
-            this.showToast('Enter a template name', 'warning');
-            return;
-        }
-
-        const config = {
-            joinType: document.getElementById('compareJoinType')?.value,
-            tolerance: document.getElementById('compareTolerance')?.value,
-            toleranceType: document.getElementById('compareToleranceType')?.value,
-            dateTolerance: document.getElementById('compareDateTolerance')?.value,
-            ignoreCase: document.getElementById('compareIgnoreCase')?.checked,
-            ignoreWhitespace: document.getElementById('compareIgnoreWhitespace')?.checked,
-            nullEqualsNull: document.getElementById('compareNullEqualsNull')?.checked,
-            enableAggregation: document.getElementById('enableAggregation')?.checked,
-            aggFunction: document.getElementById('aggFunction')?.value,
-            enableFuzzyMatch: document.getElementById('enableFuzzyMatch')?.checked,
-            fuzzyThreshold: document.getElementById('fuzzyThreshold')?.value,
-            transformations: Array.from(document.getElementById('transformations')?.selectedOptions || []).map(o => o.value),
-            showDuplicates: document.getElementById('showDuplicates')?.checked,
-            showUnique: document.getElementById('showUnique')?.checked,
-            showNotMatched: document.getElementById('showNotMatched')?.checked
-        };
-
-        // Save to SQLite via API
-        try {
-            const response = await fetch(`${this.API_BASE}/api/storage/templates/${encodeURIComponent(name)}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(config)
-            });
-            const data = await response.json();
-
-            if (data.success) {
-                this.refreshTemplateList();
-                document.getElementById('templateName').value = '';
-                this.showToast(`Template "${name}" saved`, 'success');
-            } else {
-                this.showToast(`Failed to save template: ${data.error}`, 'error');
-            }
-        } catch (error) {
-            this.showToast(`Failed to save template: ${error.message}`, 'error');
-        }
-    },
-
-    // Load a template
-    async loadTemplate(name) {
-        if (!name) return;
-
-        try {
-            const response = await fetch(`${this.API_BASE}/api/storage/templates/${encodeURIComponent(name)}`);
-            const data = await response.json();
-
-            if (!data.success || !data.config) {
-                this.showToast('Template not found', 'warning');
-                return;
-            }
-
-            const config = data.config;
-
-            // Apply config
-            if (config.joinType) document.getElementById('compareJoinType').value = config.joinType;
-            if (config.tolerance) document.getElementById('compareTolerance').value = config.tolerance;
-            if (config.toleranceType) document.getElementById('compareToleranceType').value = config.toleranceType;
-            if (config.dateTolerance) document.getElementById('compareDateTolerance').value = config.dateTolerance;
-            document.getElementById('compareIgnoreCase').checked = config.ignoreCase || false;
-            document.getElementById('compareIgnoreWhitespace').checked = config.ignoreWhitespace || false;
-            document.getElementById('compareNullEqualsNull').checked = config.nullEqualsNull !== false;
-            document.getElementById('enableAggregation').checked = config.enableAggregation || false;
-            if (config.aggFunction) document.getElementById('aggFunction').value = config.aggFunction;
-            document.getElementById('enableFuzzyMatch').checked = config.enableFuzzyMatch || false;
-            if (config.fuzzyThreshold) document.getElementById('fuzzyThreshold').value = config.fuzzyThreshold;
-            document.getElementById('showDuplicates').checked = config.showDuplicates !== false;
-            document.getElementById('showUnique').checked = config.showUnique !== false;
-            document.getElementById('showNotMatched').checked = config.showNotMatched !== false;
-
-            // Handle transformation multi-select
-            if (config.transformations) {
-                const select = document.getElementById('transformations');
-                Array.from(select.options).forEach(opt => {
-                    opt.selected = config.transformations.includes(opt.value);
-                });
-            }
-
-            // Toggle aggregation options visibility
-            const aggOptions = document.getElementById('aggregationOptions');
-            if (aggOptions) aggOptions.classList.toggle('hidden', !config.enableAggregation);
-
-            this.showToast(`Template "${name}" loaded`, 'success');
-        } catch (error) {
-            this.showToast(`Failed to load template: ${error.message}`, 'error');
-        }
-    },
-
-    // Refresh template dropdown
-    async refreshTemplateList() {
-        const select = document.getElementById('loadTemplate');
-        if (!select) return;
-
-        try {
-            const response = await fetch(`${this.API_BASE}/api/storage/templates`);
-            const data = await response.json();
-
-            const names = data.success ? data.names : [];
-
-            select.innerHTML = '<option value="">Select saved template...</option>' +
-                names.map(n => `<option value="${n}">${n}</option>`).join('');
-        } catch (error) {
-            console.error('Failed to refresh template list:', error);
-        }
-    },
 
     // Setup column mapping UI
     setupColumnMapping() {

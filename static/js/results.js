@@ -11,13 +11,18 @@ const Results = {
     render(results) {
         if (!results || results.length === 0) {
             document.getElementById('noResultsMessage').classList.remove('hidden');
+            document.getElementById('dashboardContainer').classList.add('hidden');
             document.getElementById('resultsContainer').classList.add('hidden');
             return;
         }
 
         document.getElementById('noResultsMessage').classList.add('hidden');
-        document.getElementById('resultsContainer').classList.remove('hidden');
 
+        // Show executive dashboard
+        // Removed per user request
+
+        // Show detailed results
+        document.getElementById('resultsContainer').classList.remove('hidden');
         this.renderSummary(results);
         this.renderDetails(results);
     },
@@ -109,7 +114,7 @@ const Results = {
                                 </thead>
                                 <tbody id="tableBody_${resultIdx}">
                                     ${result.failed_rows.slice(0, initialShow).map(row =>
-                    `<tr>${columns.map(c => `<td>${row[c] !== null && row[c] !== undefined ? row[c] : '<span style="color:var(--text-muted)">null</span>'}</td>`).join('')}</tr>`
+                    `<tr>${columns.map(c => `<td>${this.formatValue(row[c])}</td>`).join('')}</tr>`
                 ).join('')}
                                 </tbody>
                             </table>
@@ -199,7 +204,7 @@ const Results = {
                         if (c === 'exceeds_threshold' && val) {
                             return `<td style="color: var(--error); font-weight: bold;">Yes</td>`;
                         }
-                        return `<td>${val !== null && val !== undefined ? (typeof val === 'number' ? val.toLocaleString() : val) : ''}</td>`;
+                        return `<td>${this.formatValue(val)}</td>`;
                     }).join('')}</tr>`
                 ).join('')}
                                 </tbody>
@@ -209,16 +214,38 @@ const Results = {
                 `;
             }
 
+            // Generate chart container for rule-specific visualization
+            const chartHtml = `
+                <div class="result-chart-section" id="chartSection_${resultIdx}" style="display: none; margin-top: 1rem;">
+                    <div style="background: var(--bg-card); border-radius: var(--border-radius); padding: 1rem;">
+                        <div style="height: 300px;">
+                            <canvas id="ruleChart_${resultIdx}"></canvas>
+                        </div>
+                    </div>
+                </div>
+            `;
+
             return `
                 <div class="result-card ${passed ? 'passed' : 'failed'}">
                     <div class="result-header">
                         <span class="result-title">${result.rule_name || 'Check'}</span>
-                        <span class="result-badge ${passed ? 'pass' : 'fail'}">${passed ? 'PASS' : 'FAIL'}</span>
+                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                            <button class="btn btn-outline btn-sm" onclick="Results.toggleChartView(${resultIdx}, ${JSON.stringify(result).replace(/"/g, '&quot;')})" title="Toggle Chart View">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                                    <line x1="12" y1="20" x2="12" y2="10"></line>
+                                    <line x1="18" y1="20" x2="18" y2="4"></line>
+                                    <line x1="6" y1="20" x2="6" y2="16"></line>
+                                </svg>
+                                Chart
+                            </button>
+                            <span class="result-badge ${passed ? 'pass' : 'fail'}">${passed ? 'PASS' : 'FAIL'}</span>
+                        </div>
                     </div>
                     <p class="result-message">${result.message || ''}</p>
                     ${statsHtml ? `<div class="result-details">${statsHtml}</div>` : ''}
                     ${violationsHtml}
                     ${aggDetailsHtml}
+                    ${chartHtml}
                     ${rowsHtml}
                 </div>
             `;
@@ -236,14 +263,14 @@ const Results = {
         if (!data.expanded) {
             // Show all rows
             tbody.innerHTML = data.rows.map(row =>
-                `<tr>${data.columns.map(c => `<td>${row[c] !== null && row[c] !== undefined ? row[c] : '<span style="color:var(--text-muted)">null</span>'}</td>`).join('')}</tr>`
+                `<tr>${data.columns.map(c => `<td>${this.formatValue(row[c])}</td>`).join('')}</tr>`
             ).join('');
             btn.textContent = 'Show Less';
             data.expanded = true;
         } else {
             // Show initial rows
             tbody.innerHTML = data.rows.slice(0, data.initialShow).map(row =>
-                `<tr>${data.columns.map(c => `<td>${row[c] !== null && row[c] !== undefined ? row[c] : '<span style="color:var(--text-muted)">null</span>'}</td>`).join('')}</tr>`
+                `<tr>${data.columns.map(c => `<td>${this.formatValue(row[c])}</td>`).join('')}</tr>`
             ).join('');
             btn.textContent = `Show All (${data.rows.length})`;
             data.expanded = false;
@@ -251,6 +278,18 @@ const Results = {
     },
 
     formatValue(value) {
+        if (value === null || value === undefined) {
+            return '<span style="color:var(--text-muted)">null</span>';
+        }
+        if (typeof value === 'object') {
+            try {
+                // If it's a simple key object like {region: "North"}, format nicely
+                // Otherwise stringify
+                return JSON.stringify(value).replace(/"/g, ' ').replace(/[{}]/g, '');
+            } catch (e) {
+                return String(value);
+            }
+        }
         if (typeof value === 'number') {
             if (Number.isInteger(value)) {
                 return value.toLocaleString();
@@ -260,7 +299,7 @@ const Results = {
         if (typeof value === 'boolean') {
             return value ? 'Yes' : 'No';
         }
-        return value;
+        return String(value);
     },
 
     // Export a specific section's data to CSV (opens in Excel)
@@ -339,5 +378,33 @@ const Results = {
         a.remove();
 
         App.showToast(`Exported ${rows.length} grouped rows to CSV`, 'success');
+    },
+
+    // Toggle chart view for a specific result
+    toggleChartView(resultIdx, result) {
+        const chartSection = document.getElementById(`chartSection_${resultIdx}`);
+        if (!chartSection) return;
+
+        const isVisible = chartSection.style.display !== 'none';
+
+        if (isVisible) {
+            // Hide chart
+            chartSection.style.display = 'none';
+        } else {
+            // Show and create chart if not already created
+            chartSection.style.display = 'block';
+
+            // Create chart if it doesn't exist yet
+            const canvasId = `ruleChart_${resultIdx}`;
+            if (!QCCharts.charts[canvasId]) {
+                setTimeout(() => {
+                    // Try comparison chart first, then rule chart
+                    let chart = QCCharts.createComparisonChart ? QCCharts.createComparisonChart(canvasId, result) : null;
+                    if (!chart) {
+                        chart = QCCharts.createRuleChart(canvasId, result);
+                    }
+                }, 100);
+            }
+        }
     }
 };

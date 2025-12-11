@@ -47,16 +47,7 @@ def init_database():
             )
         ''')
         
-        # QC Templates table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS qc_templates (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT UNIQUE NOT NULL,
-                config TEXT NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
+
         
         # Settings table (for future use)
         cursor.execute('''
@@ -151,50 +142,7 @@ def delete_credential(cred_type: str, name: str) -> bool:
         return cursor.rowcount > 0
 
 
-# ============ QC Templates Functions ============
 
-def save_template(name: str, config: Dict) -> bool:
-    """Save or update a QC template"""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO qc_templates (name, config, updated_at)
-            VALUES (?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(name) DO UPDATE SET
-                config = excluded.config,
-                updated_at = CURRENT_TIMESTAMP
-        ''', (name, json.dumps(config)))
-        return True
-
-
-def get_template(name: str) -> Optional[Dict]:
-    """Get a specific template"""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            'SELECT config FROM qc_templates WHERE name = ?',
-            (name,)
-        )
-        row = cursor.fetchone()
-        if row:
-            return json.loads(row['config'])
-        return None
-
-
-def list_templates() -> List[str]:
-    """List all template names"""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT name FROM qc_templates ORDER BY name')
-        return [row['name'] for row in cursor.fetchall()]
-
-
-def delete_template(name: str) -> bool:
-    """Delete a template"""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('DELETE FROM qc_templates WHERE name = ?', (name,))
-        return cursor.rowcount > 0
 
 
 # ============ Settings Functions ============

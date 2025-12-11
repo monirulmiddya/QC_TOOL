@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Chart Test</title>
+    <style>
+        body {
+            font-family: Arial;
+            padding: 20px;
+            background: #0f1419;
+            color: white;
+        }
+
+        .test {
+            margin: 20px 0;
+            padding: 20px;
+            background: #1a1f2e;
+            border-radius: 8px;
+        }
+
+        canvas {
+            background: white;
+        }
+
+        #qualityGauge {
+            background: #242938;
+            height: 200px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>QC Dashboard Chart Test</h1>
+
+    <div class="test">
+        <h2>Test 1: Chart.js Loaded?</h2>
+        <p id="chartjs-status">Checking...</p>
+    </div>
+
+    <div class="test">
+        <h2>Test 2: ECharts Loaded?</h2>
+        <p id="echarts-status">Checking...</p>
+    </div>
+
+    <div class="test">
+        <h2>Test 3: Simple Doughnut Chart</h2>
+        <canvas id="testDoughnut" width="300" height="300"></canvas>
+    </div>
+
+    <div class="test">
+        <h2>Test 4: Quality Gauge</h2>
+        <div id="qualityGauge"></div>
+    </div>
+
+    <div class="test">
+        <h2>Test 5: Bar Chart</h2>
+        <canvas id="testBar" width="400" height="300"></canvas>
+    </div>
+
+    <!-- Chart Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+
+    <script>
+        // Test 1: Chart.js
+        document.getElementById('chartjs-status').innerHTML =
+            typeof Chart !== 'undefined'
+                ? '✅ Chart.js loaded successfully'
+                : '❌ Chart.js NOT loaded';
+
+        // Test 2: ECharts
+        document.getElementById('echarts-status').innerHTML =
+            typeof echarts !== 'undefined'
+                ? '✅ ECharts loaded successfully'
+                : '❌ ECharts NOT loaded';
+
+        // Test 3: Create doughnut
+        if (typeof Chart !== 'undefined') {
+            const ctx1 = document.getElementById('testDoughnut').getContext('2d');
+            new Chart(ctx1, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Passed', 'Failed'],
+                    datasets: [{
+                        data: [10, 2],
+                        backgroundColor: ['#10b981', '#ef4444']
+                    }]
+                }
+            });
+        }
+
+        // Test 4: Create gauge
+        if (typeof echarts !== 'undefined') {
+            const gauge = echarts.init(document.getElementById('qualityGauge'));
+            gauge.setOption({
+                series: [{
+                    type: 'gauge',
+                    progress: { show: true, width: 18 },
+                    axisLine: { lineStyle: { width: 18 } },
+                    axisTick: { show: false },
+                    splitLine: { show: false },
+                    axisLabel: { show: true },
+                    detail: {
+                        valueAnimation: true,
+                        formatter: '{value}%',
+                        fontSize: 30
+                    },
+                    data: [{ value: 83.3 }]
+                }]
+            });
+        }
+
+        // Test 5: Create bar
+        if (typeof Chart !== 'undefined') {
+            const ctx2 = document.getElementById('testBar').getContext('2d');
+            new Chart(ctx2, {
+                type: 'bar',
+                data: {
+                    labels: ['Null Check', 'Pattern Check', 'Range Check'],
+                    datasets: [{
+                        label: 'Time (s)',
+                        data: [0.8, 1.2, 0.9],
+                        backgroundColor: '#6366f1'
+                    }]
+                },
+                options: {
+                    indexAxis: 'y'
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>
