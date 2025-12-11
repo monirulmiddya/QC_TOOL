@@ -38,10 +38,18 @@ class RuleResult:
         elif isinstance(obj, np.ndarray):
             return obj.tolist()
         elif isinstance(obj, pd.Timestamp):
-            # Keep date format as ISO string (e.g., '2024-01-01' or '2024-01-01T12:30:00')
-            return obj.isoformat() if pd.notna(obj) else None
-        elif isinstance(obj, (datetime, date)):
+            # Keep date format - exclude time if midnight
+            if pd.isna(obj):
+                return None
+            if obj.hour == 0 and obj.minute == 0 and obj.second == 0 and obj.microsecond == 0:
+                return obj.strftime('%Y-%m-%d')
             return obj.isoformat()
+        elif isinstance(obj, datetime):
+            if obj.hour == 0 and obj.minute == 0 and obj.second == 0 and obj.microsecond == 0:
+                return obj.strftime('%Y-%m-%d')
+            return obj.isoformat()
+        elif isinstance(obj, date):
+            return obj.strftime('%Y-%m-%d')
         elif pd.isna(obj):
             return None
         else:

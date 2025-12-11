@@ -1733,3 +1733,26 @@ body {
     align-items: center;
     justify-content: center;
 }
+
+/* ========================================
+   SQL Query Modal
+   ======================================== */
+
+.sql-query-display {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    overflow: auto;
+    max-height: 400px;
+}
+
+.sql-code {
+    margin: 0;
+    padding: 1rem;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+}

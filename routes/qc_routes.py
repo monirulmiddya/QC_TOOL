@@ -21,14 +21,31 @@ def row_to_dict(row):
     
     Converts Timestamp objects to ISO format strings instead of the 
     verbose 'Mon, 01 Jan 2024 00:00:00 GMT' format.
+    Time is only included if it's not midnight.
     """
     from datetime import datetime, date
+    
+    def format_datetime(val):
+        """Format datetime, excluding time if midnight."""
+        if isinstance(val, pd.Timestamp):
+            if pd.isna(val):
+                return None
+            # If time is midnight, just return date part
+            if val.hour == 0 and val.minute == 0 and val.second == 0 and val.microsecond == 0:
+                return val.strftime('%Y-%m-%d')
+            return val.isoformat()
+        elif isinstance(val, datetime):
+            if val.hour == 0 and val.minute == 0 and val.second == 0 and val.microsecond == 0:
+                return val.strftime('%Y-%m-%d')
+            return val.isoformat()
+        elif isinstance(val, date):
+            return val.strftime('%Y-%m-%d')
+        return val
+    
     result = {}
     for key, val in row.to_dict().items():
-        if isinstance(val, pd.Timestamp):
-            result[key] = val.isoformat() if pd.notna(val) else None
-        elif isinstance(val, (datetime, date)):
-            result[key] = val.isoformat()
+        if isinstance(val, (pd.Timestamp, datetime, date)):
+            result[key] = format_datetime(val)
         elif pd.isna(val):
             result[key] = None
         else:

@@ -22,7 +22,7 @@ def df_to_records(df):
     
     Pandas to_dict('records') converts datetime to verbose format like 
     'Mon, 01 Jan 2024 00:00:00 GMT'. This function keeps dates as ISO strings
-    like '2024-01-01' or '2024-01-01 12:30:00'.
+    like '2024-01-01' or '2024-01-01T12:30:00' (time only if non-midnight).
     """
     # Create a copy to avoid modifying the original
     df_copy = df.copy()
@@ -30,10 +30,16 @@ def df_to_records(df):
     # Convert datetime columns to string format
     for col in df_copy.columns:
         if pd.api.types.is_datetime64_any_dtype(df_copy[col]):
-            # Convert to ISO format string, keeping original precision
-            df_copy[col] = df_copy[col].apply(
-                lambda x: x.isoformat() if pd.notna(x) else None
-            )
+            # Convert to ISO format string, keeping time only if not midnight
+            def format_datetime(x):
+                if pd.isna(x):
+                    return None
+                # If time is midnight, just return date part
+                if x.hour == 0 and x.minute == 0 and x.second == 0 and x.microsecond == 0:
+                    return x.strftime('%Y-%m-%d')
+                return x.isoformat()
+            
+            df_copy[col] = df_copy[col].apply(format_datetime)
     
     return df_copy.to_dict('records')
 
@@ -234,7 +240,7 @@ def list_sessions():
         }
         # Add query info for database sources
         if 'query' in stored:
-            session_info['query'] = stored['query'][:100] + '...' if len(stored.get('query', '')) > 100 else stored.get('query', '')
+            session_info['query'] = stored['query']
         sessions.append(session_info)
     
     return jsonify({'success': True, 'sessions': sessions, 'count': len(sessions)})

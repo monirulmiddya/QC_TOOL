@@ -682,6 +682,31 @@
         </div>
     </div>
 
+    <!-- SQL Query Modal -->
+    <div id="sqlQueryModal" class="modal hidden">
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h3>SQL Query - <span id="sqlQuerySourceName"></span></h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="sql-query-display">
+                    <pre id="sqlQueryContent" class="sql-code"></pre>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline modal-cancel">Close</button>
+                <button class="btn btn-primary" onclick="DataSource.copySqlQuery()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"></path>
+                    </svg>
+                    Copy SQL
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Rule Config Modal -->
     <div id="ruleConfigModal" class="modal hidden">
         <div class="modal-content modal-lg">

@@ -105,6 +105,17 @@ const DataSource = {
                 session.source === 'postgres' ? 'postgres' : 'athena';
             const iconSvg = this.getSourceIcon(session.source);
 
+            // Show SQL button only for database sources with a query
+            const showSqlBtn = session.query ? `
+                <button class="btn btn-outline btn-sm" onclick="DataSource.showSqlQuery('${session.session_id}')" title="View SQL Query">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                        <polyline points="16 18 22 12 16 6"></polyline>
+                        <polyline points="8 6 2 12 8 18"></polyline>
+                    </svg>
+                    SQL
+                </button>
+            ` : '';
+
             return `
                 <div class="source-card" data-session-id="${session.session_id}">
                     <div class="source-card-header">
@@ -120,6 +131,7 @@ const DataSource = {
                         </div>
                     </div>
                     <div class="source-card-actions">
+                        ${showSqlBtn}
                         <button class="btn btn-outline btn-sm" onclick="DataSource.viewData('${session.session_id}', '${session.source_name}', ${session.row_count})">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
                                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
@@ -790,5 +802,32 @@ const DataSource = {
         } catch (error) {
             App.showToast(`Rename failed: ${error.message}`, 'error');
         }
+    },
+
+    // ========================================
+    // View SQL Query
+    // ========================================
+
+    showSqlQuery(sessionId) {
+        const session = App.state.sessions.find(s => s.session_id === sessionId);
+        if (!session || !session.query) {
+            App.showToast('No SQL query available for this source', 'warning');
+            return;
+        }
+
+        // Set modal content
+        document.getElementById('sqlQuerySourceName').textContent = session.source_name;
+        document.getElementById('sqlQueryContent').textContent = session.query;
+
+        App.showModal('sqlQueryModal');
+    },
+
+    copySqlQuery() {
+        const queryText = document.getElementById('sqlQueryContent').textContent;
+        navigator.clipboard.writeText(queryText).then(() => {
+            App.showToast('SQL query copied to clipboard', 'success');
+        }).catch(() => {
+            App.showToast('Failed to copy to clipboard', 'error');
+        });
     }
 };
