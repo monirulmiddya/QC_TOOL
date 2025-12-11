@@ -528,6 +528,213 @@ def compare_datasets():
         return jsonify({'error': str(e)}), 500
 
 
+@bp.route('/calculate', methods=['POST'])
+def calculate_formula():
+    """Calculate formula between columns from different sources"""
+    try:
+        data = request.get_json()
+        
+        # Required parameters
+        source1_id = data.get('source1_id')
+        source2_id = data.get('source2_id')
+        column1 = data.get('column1')
+        column2 = data.get('column2')
+        operation = data.get('operation', '-')  # +, -, *, /
+        result_name = data.get('result_name', 'Calculated')
+        
+        # Row matching strategy
+        match_by = data.get('match_by', 'index')  # 'index' or 'key'
+        key_columns = data.get('key_columns', [])  # For key-based matching
+        
+        # Validation
+        if not all([source1_id, source2_id, column1, column2]):
+            return jsonify({'error': 'source1_id, source2_id, column1, and column2 are required'}), 400
+        
+        if match_by == 'key' and not key_columns:
+            return jsonify({'error': 'key_columns required for key-based matching'}), 400
+        
+        if operation not in ['+', '-', '*', '/']:
+            return jsonify({'error': 'operation must be one of: +, -, *, /'}), 400
+        
+        # Get dataframes
+        stored1 = DATA_STORE.get(source1_id)
+        stored2 = DATA_STORE.get(source2_id)
+        
+        if not stored1:
+            return jsonify({'error': f'Source 1 not found: {source1_id}'}), 404
+        if not stored2:
+            return jsonify({'error': f'Source 2 not found: {source2_id}'}), 404
+        
+        df1 = stored1['data'].copy()
+        df2 = stored2['data'].copy()
+        source1_name = stored1.get('source_name', 'Source1')
+        source2_name = stored2.get('source_name', 'Source2')
+        
+        # Validate columns exist
+        if column1 not in df1.columns:
+            return jsonify({'error': f'Column "{column1}" not found in {source1_name}'}), 400
+        if column2 not in df2.columns:
+            return jsonify({'error': f'Column "{column2}" not found in {source2_name}'}), 400
+        
+        # Build result dataframe
+        results = []
+        
+        if match_by == 'index':
+            # Match by row index
+            max_rows = min(len(df1), len(df2))
+            for i in range(max_rows):
+                val1 = df1.iloc[i][column1]
+                val2 = df2.iloc[i][column2]
+                
+                row = {
+                    '_index': i,
+                    f'{source1_name}.{column1}': val1,
+                    f'{source2_name}.{column2}': val2
+                }
+                
+                # Calculate
+                try:
+                    if pd.isna(val1) or pd.isna(val2):
+                        row[result_name] = None
+                        row['_status'] = 'NULL_VALUE'
+                    else:
+                        v1, v2 = float(val1), float(val2)
+                        if operation == '+':
+                            row[result_name] = v1 + v2
+                        elif operation == '-':
+                            row[result_name] = v1 - v2
+                        elif operation == '*':
+                            row[result_name] = v1 * v2
+                        elif operation == '/':
+                            row[result_name] = v1 / v2 if v2 != 0 else None
+                            if v2 == 0:
+                                row['_status'] = 'DIV_BY_ZERO'
+                        row['_status'] = row.get('_status', 'OK')
+                except (ValueError, TypeError):
+                    row[result_name] = None
+                    row['_status'] = 'CONVERT_ERROR'
+                
+                results.append(row)
+            
+            unmatched_info = {
+                'source1_extra': len(df1) - max_rows,
+                'source2_extra': len(df2) - max_rows
+            }
+        
+        else:  # match_by == 'key'
+            # Validate key columns exist
+            for kc in key_columns:
+                if kc not in df1.columns:
+                    return jsonify({'error': f'Key column "{kc}" not found in {source1_name}'}), 400
+                if kc not in df2.columns:
+                    return jsonify({'error': f'Key column "{kc}" not found in {source2_name}'}), 400
+            
+            # Create key tuples
+            df1['_key'] = df1[key_columns].apply(lambda x: tuple(x), axis=1)
+            df2['_key'] = df2[key_columns].apply(lambda x: tuple(x), axis=1)
+            
+            # Build lookup from df2
+            df2_lookup = {}
+            for idx, row in df2.iterrows():
+                key = row['_key']
+                if key not in df2_lookup:
+                    df2_lookup[key] = row
+            
+            matched = 0
+            unmatched = 0
+            
+            for idx, row1 in df1.iterrows():
+                key = row1['_key']
+                result_row = {f'key_{k}': row1[k] for k in key_columns}
+                result_row[f'{source1_name}.{column1}'] = row1[column1]
+                
+                if key in df2_lookup:
+                    row2 = df2_lookup[key]
+                    val1 = row1[column1]
+                    val2 = row2[column2]
+                    result_row[f'{source2_name}.{column2}'] = val2
+                    
+                    try:
+                        if pd.isna(val1) or pd.isna(val2):
+                            result_row[result_name] = None
+                            result_row['_status'] = 'NULL_VALUE'
+                        else:
+                            v1, v2 = float(val1), float(val2)
+                            if operation == '+':
+                                result_row[result_name] = v1 + v2
+                            elif operation == '-':
+                                result_row[result_name] = v1 - v2
+                            elif operation == '*':
+                                result_row[result_name] = v1 * v2
+                            elif operation == '/':
+                                result_row[result_name] = v1 / v2 if v2 != 0 else None
+                                if v2 == 0:
+                                    result_row['_status'] = 'DIV_BY_ZERO'
+                            result_row['_status'] = result_row.get('_status', 'OK')
+                    except (ValueError, TypeError):
+                        result_row[result_name] = None
+                        result_row['_status'] = 'CONVERT_ERROR'
+                    
+                    matched += 1
+                else:
+                    result_row[f'{source2_name}.{column2}'] = None
+                    result_row[result_name] = None
+                    result_row['_status'] = 'NO_MATCH'
+                    unmatched += 1
+                
+                results.append(result_row)
+            
+            unmatched_info = {
+                'matched_rows': matched,
+                'unmatched_rows': unmatched,
+                'source2_only': len(df2_lookup) - matched
+            }
+        
+        # Calculate statistics
+        calculated_values = [r[result_name] for r in results if r.get(result_name) is not None]
+        stats = {
+            'total_rows': len(results),
+            'calculated_rows': len(calculated_values),
+            'null_results': len(results) - len(calculated_values),
+            **unmatched_info
+        }
+        
+        if calculated_values:
+            stats['sum'] = sum(calculated_values)
+            stats['avg'] = sum(calculated_values) / len(calculated_values)
+            stats['min'] = min(calculated_values)
+            stats['max'] = max(calculated_values)
+        
+        # Store results for export
+        import uuid
+        result_id = str(uuid.uuid4())
+        QC_RESULTS_STORE[result_id] = {
+            'type': 'calculation',
+            'formula': f'{source1_name}.{column1} {operation} {source2_name}.{column2}',
+            'match_by': match_by,
+            'key_columns': key_columns if match_by == 'key' else None,
+            'results': [{
+                'rule_name': f'📊 Formula: {source1_name}.{column1} {operation} {source2_name}.{column2}',
+                'passed': True,
+                'message': f'Calculated {len(calculated_values)} values using {match_by}-based matching',
+                'statistics': stats,
+                'failed_rows': results[:100]  # Limit for display
+            }]
+        }
+        
+        return jsonify({
+            'success': True,
+            'result_id': result_id,
+            'formula': f'{source1_name}.{column1} {operation} {source2_name}.{column2}',
+            'statistics': stats,
+            'data': results[:100]  # Limit response size
+        })
+        
+    except Exception as e:
+        logger.error(f"Calculation failed: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @bp.route('/results/<result_id>', methods=['GET'])
 def get_qc_result(result_id):
     """Get stored QC result"""

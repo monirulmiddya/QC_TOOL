@@ -215,6 +215,11 @@ const App = {
         // Initial column population
         this.updateCompareColumns();
         this.updateCompareButtonState();
+
+        // Update formula calculator source dropdowns
+        if (typeof QCRules !== 'undefined' && QCRules.updateFormulaSources) {
+            QCRules.updateFormulaSources();
+        }
     },
 
     // Update column selectors based on selected sources
@@ -247,10 +252,8 @@ const App = {
         keySelect.innerHTML = optionsHtml;
         valueSelect.innerHTML = optionsHtml;
 
-        // Populate aggregation columns
-        const aggColumn = document.getElementById('aggColumn');
+        // Populate aggregation group by columns
         const aggGroupBy = document.getElementById('aggGroupBy');
-        if (aggColumn) aggColumn.innerHTML = optionsHtml;
         if (aggGroupBy) aggGroupBy.innerHTML = optionsHtml;
 
         // Setup column mapping, aggregation toggle, and templates
@@ -259,19 +262,102 @@ const App = {
         this.setupTemplates();
     },
 
-    // Setup aggregation toggle
+    // Setup aggregation toggle and dynamic rows
     setupAggregationToggle() {
         const enableCheckbox = document.getElementById('enableAggregation');
         const options = document.getElementById('aggregationOptions');
+        const addBtn = document.getElementById('addAggregationBtn');
 
         if (!enableCheckbox || !options) return;
 
         if (!enableCheckbox._hasListener) {
             enableCheckbox.addEventListener('change', () => {
                 options.classList.toggle('hidden', !enableCheckbox.checked);
+                // Add initial row if empty
+                if (enableCheckbox.checked) {
+                    const list = document.getElementById('aggregationList');
+                    if (list && list.children.length === 0) {
+                        this.addAggregationRow();
+                    }
+                }
             });
             enableCheckbox._hasListener = true;
         }
+
+        if (addBtn && !addBtn._hasListener) {
+            addBtn.addEventListener('click', () => this.addAggregationRow());
+            addBtn._hasListener = true;
+        }
+    },
+
+    // Add aggregation row with column + function selectors
+    addAggregationRow() {
+        const container = document.getElementById('aggregationList');
+        if (!container) return;
+
+        // Get all columns from selected sources
+        const checkboxes = document.querySelectorAll('.compare-source-checkbox:checked');
+        let columns = [];
+        checkboxes.forEach(cb => {
+            const session = this.state.sessions.find(s => s.session_id === cb.value);
+            if (session && session.columns) {
+                columns = [...new Set([...columns, ...session.columns])];
+            }
+        });
+
+        if (columns.length === 0) {
+            this.showToast('Select sources first to see available columns', 'warning');
+            return;
+        }
+
+        const rowId = `agg_row_${Date.now()}`;
+        const row = document.createElement('div');
+        row.className = 'aggregation-row';
+        row.id = rowId;
+        row.innerHTML = `
+            <select class="form-select agg-column-select" style="flex: 2;">
+                <option value="">Select column...</option>
+                ${columns.map(c => `<option value="${c}">${c}</option>`).join('')}
+            </select>
+            <select class="form-select agg-function-select" style="flex: 1;">
+                <option value="sum">SUM</option>
+                <option value="count">COUNT</option>
+                <option value="avg">AVG</option>
+                <option value="min">MIN</option>
+                <option value="max">MAX</option>
+            </select>
+            <button type="button" class="btn btn-danger btn-sm" onclick="document.getElementById('${rowId}').remove()" title="Remove">✕</button>
+        `;
+        container.appendChild(row);
+    },
+
+    // Get aggregation configs (array of {column, function}) plus group_by
+    getAggregationConfigs() {
+        const enabled = document.getElementById('enableAggregation')?.checked;
+        if (!enabled) return null;
+
+        const container = document.getElementById('aggregationList');
+        if (!container) return null;
+
+        // Get group by columns
+        const groupBySelect = document.getElementById('aggGroupBy');
+        const groupBy = groupBySelect ? Array.from(groupBySelect.selectedOptions).map(o => o.value) : [];
+
+        const configs = [];
+        container.querySelectorAll('.aggregation-row').forEach(row => {
+            const column = row.querySelector('.agg-column-select')?.value;
+            const func = row.querySelector('.agg-function-select')?.value;
+            if (column && func) {
+                configs.push({ column, function: func });
+            }
+        });
+
+        if (configs.length === 0) return null;
+
+        return {
+            aggregations: configs,
+            group_by: groupBy.length > 0 ? groupBy : null
+        };
     },
 
     // Setup QC templates

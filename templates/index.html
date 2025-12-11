@@ -499,23 +499,28 @@
                     </label>
 
                     <div id="aggregationOptions" class="aggregation-options hidden">
-                        <div class="form-row">
+                        <div class="form-row" style="margin-bottom: 1rem;">
                             <div class="form-group">
-                                <label for="aggFunction">Aggregate Function</label>
-                                <select id="aggFunction" class="form-select">
-                                    <option value="sum">SUM</option>
-                                    <option value="count">COUNT</option>
-                                    <option value="avg">AVG (Average)</option>
-                                    <option value="min">MIN</option>
-                                    <option value="max">MAX</option>
+                                <label for="aggGroupBy">Group By Columns</label>
+                                <select id="aggGroupBy" class="form-select multi-select" multiple>
                                 </select>
-                            </div>
-                            <div class="form-group">
-                                <label for="aggColumn">Aggregate Column</label>
-                                <select id="aggColumn" class="form-select">
-                                </select>
+                                <small class="form-hint">Select columns to group by (e.g., date, category)</small>
                             </div>
                         </div>
+
+                        <p class="section-hint" style="margin-bottom: 0.5rem;">Add columns to aggregate:</p>
+                        <div id="aggregationList" class="aggregation-list">
+                            <!-- Dynamic rows will be added here -->
+                        </div>
+                        <button type="button" id="addAggregationBtn" class="btn btn-sm btn-secondary"
+                            style="margin-top: 0.5rem;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14"
+                                height="14">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                            Add Aggregation
+                        </button>
                     </div>
                 </div>
 
@@ -585,6 +590,94 @@
                             </div>
                         </div>
                     </div>
+                </div>
+
+                <!-- Formula Calculation Section -->
+                <div class="compare-section">
+                    <h3>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20"
+                            height="20">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        Formula Calculator <span class="badge-optional">Optional</span>
+                    </h3>
+                    <p class="section-hint">Calculate values between columns from different sources (e.g.,
+                        Source1.Amount - Source2.Amount)</p>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="formulaSource1">Source 1</label>
+                            <select id="formulaSource1" class="form-select">
+                                <option value="">Select source...</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="formulaColumn1">Column</label>
+                            <select id="formulaColumn1" class="form-select">
+                                <option value="">Select column...</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row" style="align-items: center;">
+                        <div class="form-group" style="flex: 0 0 100px;">
+                            <label for="formulaOperation">Operation</label>
+                            <select id="formulaOperation" class="form-select">
+                                <option value="-">− Subtract</option>
+                                <option value="+">+ Add</option>
+                                <option value="*">× Multiply</option>
+                                <option value="/">÷ Divide</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="formulaSource2">Source 2</label>
+                            <select id="formulaSource2" class="form-select">
+                                <option value="">Select source...</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="formulaColumn2">Column</label>
+                            <select id="formulaColumn2" class="form-select">
+                                <option value="">Select column...</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <h4 class="subsection-title">Row Matching</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="formulaMatchBy">Match Rows By</label>
+                            <select id="formulaMatchBy" class="form-select">
+                                <option value="index">Index (row position)</option>
+                                <option value="key">Key Column(s)</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="formulaKeyColumnGroup" style="display: none;">
+                            <label for="formulaKeyColumns">Key Column(s)</label>
+                            <select id="formulaKeyColumns" class="form-select multi-select" multiple>
+                            </select>
+                            <small class="form-hint">Select column(s) to match rows between sources</small>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="formulaResultName">Result Column Name</label>
+                            <input type="text" id="formulaResultName" value="Calculated"
+                                placeholder="Result column name">
+                        </div>
+                    </div>
+
+                    <button id="runFormulaBtn" class="btn btn-secondary">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16"
+                            height="16">
+                            <polyline points="16 18 22 12 16 6"></polyline>
+                            <polyline points="8 6 2 12 8 18"></polyline>
+                        </svg>
+                        Calculate Formula
+                    </button>
                 </div>
 
                 <button id="runCompareBtn" class="btn btn-primary btn-lg" disabled>

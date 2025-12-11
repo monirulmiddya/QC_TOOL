@@ -227,7 +227,68 @@ def _build_export_data(qc_results: dict, include_failed_rows: bool) -> dict:
         'failed_rows': {}
     }
     
-    # Handle comparison results
+    # Handle multi-source comparison results (from /api/qc/compare)
+    if qc_results.get('type') == 'multi_comparison':
+        result = qc_results['result']
+        
+        # Duplicates section
+        if 'duplicates' in result:
+            dup = result['duplicates']
+            export_data['summary'].append({
+                'Type': 'Duplicates (In Multiple Sources)',
+                'Count': dup.get('count', 0),
+                'Status': 'PASS' if dup.get('count', 0) == 0 else 'FAIL'
+            })
+            if include_failed_rows and dup.get('rows'):
+                export_data['failed_rows']['Duplicates'] = dup['rows']
+        
+        # Unique records section
+        if 'unique' in result:
+            for source_name, info in result['unique'].items():
+                export_data['summary'].append({
+                    'Type': f'Unique to: {source_name}',
+                    'Count': info.get('count', 0),
+                    'Status': 'INFO'
+                })
+                if include_failed_rows and info.get('rows'):
+                    export_data['failed_rows'][f'Unique_{source_name}'] = info['rows']
+        
+        # Not matched / Value differences section
+        if 'not_matched' in result:
+            diff = result['not_matched']
+            export_data['summary'].append({
+                'Type': 'Value Differences',
+                'Count': diff.get('count', 0),
+                'Status': 'PASS' if diff.get('count', 0) == 0 else 'FAIL'
+            })
+            if include_failed_rows and diff.get('rows'):
+                export_data['failed_rows']['Differences'] = diff['rows']
+            
+            # Add column difference breakdown
+            if diff.get('column_differences'):
+                for col, count in diff['column_differences'].items():
+                    export_data['summary'].append({
+                        'Type': f'Column Difference: {col}',
+                        'Count': count,
+                        'Status': 'DETAIL'
+                    })
+        
+        # Aggregation section
+        if 'aggregation' in result:
+            agg = result['aggregation']
+            export_data['summary'].append({
+                'Type': f'Aggregation: {agg.get("function", "").upper()}({agg.get("column", "")})',
+                'Count': agg.get('total_groups', 0),
+                'Status': 'PASS' if not agg.get('variances') else 'FAIL'
+            })
+            if agg.get('results'):
+                export_data['aggregation'] = agg['results']
+            if include_failed_rows and agg.get('variances'):
+                export_data['failed_rows']['Aggregation_Variances'] = agg['variances']
+        
+        return export_data
+    
+    # Handle legacy comparison results (backward compatibility)
     if qc_results.get('type') == 'comparison':
         result = qc_results['result']
         export_data['summary'].append({
@@ -267,3 +328,4 @@ def _build_export_data(qc_results: dict, include_failed_rows: bool) -> dict:
             export_data['failed_rows'][rule_name] = result['failed_rows']
     
     return export_data
+

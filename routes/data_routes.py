@@ -17,6 +17,30 @@ logger = logging.getLogger(__name__)
 DATA_STORE = {}
 
 
+def get_unique_source_name(base_name: str) -> str:
+    """Generate a unique source name by appending (1), (2), etc. if name already exists.
+    
+    Args:
+        base_name: The original source name (e.g., 'data.csv' or 'POSTGRES Query')
+        
+    Returns:
+        A unique source name (e.g., 'data.csv', 'data.csv (1)', 'data.csv (2)')
+    """
+    existing_names = {stored.get('source_name', '') for stored in DATA_STORE.values()}
+    
+    # If name doesn't exist, use as is
+    if base_name not in existing_names:
+        return base_name
+    
+    # Find the next available number
+    counter = 1
+    while True:
+        new_name = f"{base_name} ({counter})"
+        if new_name not in existing_names:
+            return new_name
+        counter += 1
+
+
 def df_to_records(df):
     """Convert DataFrame to records while preserving original date formats.
     
@@ -80,10 +104,11 @@ def execute_query():
         
         # Store data with session ID
         session_id = str(uuid.uuid4())
+        unique_name = get_unique_source_name(f"{source.upper()} Query")
         DATA_STORE[session_id] = {
             'data': df,
             'source': source,
-            'source_name': f"{source.upper()} Query",
+            'source_name': unique_name,
             'query': query,
             'columns': df.columns.tolist(),
             'row_count': len(df),
@@ -148,10 +173,11 @@ def upload_files():
                 
                 # Create session for this file
                 session_id = str(uuid.uuid4())
+                unique_name = get_unique_source_name(file.filename)
                 DATA_STORE[session_id] = {
                     'data': df,
                     'source': 'file',
-                    'source_name': file.filename,
+                    'source_name': unique_name,
                     'file_path': file_path,
                     'columns': df.columns.tolist(),
                     'row_count': len(df),

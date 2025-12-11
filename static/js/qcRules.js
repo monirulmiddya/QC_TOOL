@@ -11,6 +11,7 @@ const QCRules = {
         this.setupRuleModal();
         this.setupRunButton();
         this.setupCompare();
+        this.setupFormulaCalculator();
     },
 
     renderRulesList(rules) {
@@ -451,25 +452,168 @@ const QCRules = {
         }
     },
 
-    // Get aggregation configuration
+    // Get aggregation configuration (now delegates to App for dynamic rows)
     getAggregationConfig() {
-        const enabled = document.getElementById('enableAggregation')?.checked;
-        if (!enabled) return null;
+        // Use App.getAggregationConfigs() for the new multi-column approach
+        if (typeof App !== 'undefined' && App.getAggregationConfigs) {
+            const configs = App.getAggregationConfigs();
+            if (configs && configs.length > 0) {
+                return {
+                    enabled: true,
+                    aggregations: configs  // Array of {column, function}
+                };
+            }
+        }
+        return null;
+    },
 
-        const func = document.getElementById('aggFunction')?.value || 'sum';
-        const column = document.getElementById('aggColumn')?.value;
-        const groupBySelect = document.getElementById('aggGroupBy');
-        const groupBy = groupBySelect ? Array.from(groupBySelect.selectedOptions).map(o => o.value) : [];
-        const varianceThreshold = parseFloat(document.getElementById('aggVarianceThreshold')?.value) || 1;
+    // Formula Calculator
+    setupFormulaCalculator() {
+        // Source dropdowns change -> update column dropdowns
+        document.getElementById('formulaSource1')?.addEventListener('change', (e) => {
+            this.updateFormulaColumns('formulaColumn1', e.target.value);
+        });
+        document.getElementById('formulaSource2')?.addEventListener('change', (e) => {
+            this.updateFormulaColumns('formulaColumn2', e.target.value);
+        });
 
-        if (!column) return null;
+        // Match by change -> show/hide key columns
+        document.getElementById('formulaMatchBy')?.addEventListener('change', (e) => {
+            const keyGroup = document.getElementById('formulaKeyColumnGroup');
+            if (keyGroup) {
+                keyGroup.style.display = e.target.value === 'key' ? 'block' : 'none';
+            }
+            // Update key columns list with common columns
+            if (e.target.value === 'key') {
+                this.updateFormulaKeyColumns();
+            }
+        });
 
-        return {
-            enabled: true,
-            function: func,
-            column: column,
-            group_by: groupBy.length > 0 ? groupBy : null,
-            variance_threshold: varianceThreshold
-        };
+        // Run formula button
+        document.getElementById('runFormulaBtn')?.addEventListener('click', () => {
+            this.runFormulaCalculation();
+        });
+    },
+
+    updateFormulaColumns(selectId, sessionId) {
+        const select = document.getElementById(selectId);
+        if (!select) return;
+
+        select.innerHTML = '<option value="">Select column...</option>';
+
+        if (!sessionId) return;
+
+        const session = App.state.sessions.find(s => s.session_id === sessionId);
+        if (session?.columns) {
+            session.columns.forEach(col => {
+                select.innerHTML += `<option value="${col}">${col}</option>`;
+            });
+        }
+    },
+
+    updateFormulaSources() {
+        const source1 = document.getElementById('formulaSource1');
+        const source2 = document.getElementById('formulaSource2');
+
+        if (!source1 || !source2) return;
+
+        const options = App.state.sessions.map(s =>
+            `<option value="${s.session_id}">${s.source_name}</option>`
+        ).join('');
+
+        source1.innerHTML = '<option value="">Select source...</option>' + options;
+        source2.innerHTML = '<option value="">Select source...</option>' + options;
+    },
+
+    updateFormulaKeyColumns() {
+        const source1Id = document.getElementById('formulaSource1')?.value;
+        const source2Id = document.getElementById('formulaSource2')?.value;
+        const keySelect = document.getElementById('formulaKeyColumns');
+
+        if (!keySelect) return;
+
+        keySelect.innerHTML = '';
+
+        if (!source1Id || !source2Id) return;
+
+        const session1 = App.state.sessions.find(s => s.session_id === source1Id);
+        const session2 = App.state.sessions.find(s => s.session_id === source2Id);
+
+        if (!session1 || !session2) return;
+
+        // Find common columns
+        const commonCols = session1.columns.filter(c => session2.columns.includes(c));
+        commonCols.forEach(col => {
+            keySelect.innerHTML += `<option value="${col}">${col}</option>`;
+        });
+    },
+
+    async runFormulaCalculation() {
+        const source1Id = document.getElementById('formulaSource1')?.value;
+        const source2Id = document.getElementById('formulaSource2')?.value;
+        const column1 = document.getElementById('formulaColumn1')?.value;
+        const column2 = document.getElementById('formulaColumn2')?.value;
+        const operation = document.getElementById('formulaOperation')?.value || '-';
+        const resultName = document.getElementById('formulaResultName')?.value || 'Calculated';
+        const matchBy = document.getElementById('formulaMatchBy')?.value || 'index';
+        const keyColumnsSelect = document.getElementById('formulaKeyColumns');
+        const keyColumns = keyColumnsSelect ? Array.from(keyColumnsSelect.selectedOptions).map(o => o.value) : [];
+
+        // Validation
+        if (!source1Id || !source2Id) {
+            App.showToast('Please select both sources', 'warning');
+            return;
+        }
+        if (!column1 || !column2) {
+            App.showToast('Please select columns from both sources', 'warning');
+            return;
+        }
+        if (matchBy === 'key' && keyColumns.length === 0) {
+            App.showToast('Please select key column(s) for matching', 'warning');
+            return;
+        }
+
+        App.showLoading('Calculating formula...');
+
+        try {
+            const response = await fetch(`${App.API_BASE}/api/qc/calculate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    source1_id: source1Id,
+                    source2_id: source2Id,
+                    column1: column1,
+                    column2: column2,
+                    operation: operation,
+                    result_name: resultName,
+                    match_by: matchBy,
+                    key_columns: keyColumns
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Calculation failed');
+            }
+
+            // Use the stored results format
+            const storedResults = [{
+                rule_name: `📊 Formula: ${data.formula}`,
+                passed: true,
+                message: `Calculated ${data.statistics.calculated_rows} values using ${matchBy}-based matching`,
+                statistics: data.statistics,
+                failed_rows: data.data,
+                failed_row_count: data.statistics.total_rows
+            }];
+
+            App.setResults(storedResults, data.result_id);
+            App.showToast(`Formula calculated: ${data.statistics.calculated_rows} results`, 'success');
+
+        } catch (error) {
+            App.showToast(`Calculation failed: ${error.message}`, 'error');
+        } finally {
+            App.hideLoading();
+        }
     }
 };
